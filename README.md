@@ -1,24 +1,28 @@
 pg_keeper
 ===========
 
-pg_keeper is simplified clustring module for PostgreSQL.
+pg_keeper is a simplified failover module for PostgreSQL, to promote a standby server to master in a 2 servers cluster.
+
+## Prerequisite
+pg_keeper requires a master and hot standby servers in PostgreSQL 9.3 or later, on a Linux OS.
+pg_keeper requires to have already the replication in place.
 
 ## Overview
-pg_keeper is available only on standby server side.
+pg_keeper runs only on a standby server. No module is available for the master server.
+pg_keeper queries the primary server at fixed intervals using a simple query 'SELECT 1'.
+If pg_keeper fails to get any result after a certain number of tries, pg_keeper will promote the standby it runs on to master, and then
+exits itself.
 
-pg_keeper polls to primary server every pg_keeper.keepalive_time
-second using simple query 'SELECT 1'.
-If pg_keeper failed to poll at pg_keeper.keepalive_count time(s),
-pg_keeper will promote the standby server to master server, and then
-exit itself.
-That is, fail over time can be calculated with this formula.
+With this, fail over time can be calculated with this formula.
 
+```
 (F/O time) = pg_keeper.keepalives_time * pg_keeper.keepalives_count
+```
 
 ## Paramters
 - pg_keeper.primary_conninfo
 
-Specifies a connection string to be used for pg_keeper to connect to master server, which is same as master server specified in recovery.conf.
+Specifies a connection string to be used for pg_keeper to connect to the master - which should be the same as the master server specified in recovery.conf.
 
 - pg_keeper.keepalive_time (sec)
 
@@ -33,10 +37,6 @@ Default value is 1 times.
 - pg_keeper.after_command
 
 Specifies shell command that will be called after promoted.
-
-## Supporting platforms
-
-pg_keeper requires PostgreSQL 9.3 or later.
 
 ## How to install pg_keeper
 
