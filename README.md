@@ -31,6 +31,10 @@ Specifies how many times pg_keeper try polling to master server in ordre to prom
 standby server.
 Default value is 1 times.
 
+## Supporting platforms
+
+pg_keeper requires PostgreSQL 9.3 or later.
+
 ## How to install pg_keeper
 
 ```
