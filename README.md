@@ -14,8 +14,10 @@ If pg_keeper fails to get any result after a certain number of tries, pg_keeper 
 exits itself.
 
 With this, fail over time can be calculated with this formula.
-(F/O time) = pg_keeper.keepalives_time * pg_keeper.keepalives_count
 
+```
+(F/O time) = pg_keeper.keepalives_time * pg_keeper.keepalives_count
+```
 
 ## Paramters
 - pg_keeper.primary_conninfo
