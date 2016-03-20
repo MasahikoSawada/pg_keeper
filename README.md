@@ -27,9 +27,12 @@ Deafult value is 5 secound.
 
 - pg_keeper.keepalive_count
 
-Specifies how many times pg_keeper try polling to master server in ordre to promote
-standby server.
+Specifies how many times pg_keeper try polling to master server in ordre to promote standby server.
 Default value is 1 times.
+
+- pg_keeper.after_command
+
+Specifies shell command that will be called after promoted.
 
 ## Supporting platforms
 

@@ -30,6 +30,7 @@ void		_PG_init(void);
 void		KeeperMain(Datum);
 static void setupKeeper(void);
 static void doPromote(void);
+static void doAfterCommand(void);
 static bool heartbeatPrimaryServer(void);
 
 /* Function for signal handler */
@@ -44,6 +45,7 @@ static volatile sig_atomic_t got_sigterm = false;
 static int	keeper_keepalives_time;
 static int	keeper_keepalives_count;
 static char	*keeper_primary_conninfo = NULL;
+static char *keeper_after_command = NULL;
 
 /* Variables for connections */
 static char conninfo[MAXPGPATH];
@@ -208,6 +210,11 @@ KeeperMain(Datum main_arg)
 		if (retry_count >= keeper_keepalives_count)
 		{
 			doPromote();
+
+			/* If after command is given, execute it */
+			if (keeper_after_command)
+				doAfterCommand();
+
 			proc_exit(0);
 		}
 	}
@@ -258,6 +265,30 @@ doPromote(void)
 }
 
 /*
+ * Attempt to execute an external shell command after promotion.
+ */
+static void
+doAfterCommand(void)
+{
+	int	rc;
+
+	Assert(keeper_after_command);
+
+	ereport(LOG,
+			(errmsg("executing after promoting command \"%s\"",
+					keeper_after_command)));
+
+	rc = system(keeper_after_command);
+
+	if (rc != 0)
+	{
+		ereport(LOG,
+				(errmsg("failed to execute after promoting command \"%s\"",
+						keeper_after_command)));
+	}
+}
+
+/*
  * Entrypoint of this module.
  *
  * We register more than one worker process here, to demonstrate how that can
@@ -303,6 +334,17 @@ _PG_init(void)
 							NULL,
 							&keeper_primary_conninfo,
 							"",
+							PGC_POSTMASTER,
+							0,
+							NULL,
+							NULL,
+							NULL);
+
+	DefineCustomStringVariable("pg_keeper.after_command",
+							   "Shell command that will be called after promoted",
+							NULL,
+							&keeper_after_command,
+							NULL,
 							PGC_POSTMASTER,
 							0,
 							NULL,
