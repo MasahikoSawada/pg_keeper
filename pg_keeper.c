@@ -44,8 +44,8 @@ static volatile sig_atomic_t got_sigterm = false;
 /* GUC variables */
 static int	keeper_keepalives_time;
 static int	keeper_keepalives_count;
-static char	*keeper_primary_conninfo = NULL;
-static char *keeper_after_command = NULL;
+static char	*keeper_primary_conninfo;
+static char *keeper_after_command;
 
 /* Variables for connections */
 static char conninfo[MAXPGPATH];
@@ -333,7 +333,7 @@ _PG_init(void)
 							"Connection information for primary server",
 							NULL,
 							&keeper_primary_conninfo,
-							"",
+							NULL,
 							PGC_POSTMASTER,
 							0,
 							NULL,
@@ -345,7 +345,7 @@ _PG_init(void)
 							NULL,
 							&keeper_after_command,
 							NULL,
-							PGC_POSTMASTER,
+							PGC_SIGHUP,
 							0,
 							NULL,
 							NULL,
