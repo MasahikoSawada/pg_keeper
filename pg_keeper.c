@@ -9,7 +9,10 @@
 
 #include "postgres.h"
 
+#include "pg_keeper.h"
+
 /* These are always necessary for a bgworker */
+#include "access/xlog.h"
 #include "miscadmin.h"
 #include "postmaster/bgworker.h"
 #include "storage/ipc.h"
@@ -22,43 +25,36 @@
 #include "tcop/utility.h"
 #include "libpq-int.h"
 
-#define	HEARTBEAT_SQL "select 1;"
-
 PG_MODULE_MAGIC;
+
+typedef enum KeeperMode
+{
+	KEEPER_MASTER_MODE,
+	KEEPER_STANDBY_MODE
+} KeeperMode;
+
+const struct config_enum_entry mode_options[] = {
+	{"master", KEEPER_MASTER_MODE, false},
+	{"standby", KEEPER_STANDBY_MODE, false},
+	{NULL, 0, false}
+};
 
 void		_PG_init(void);
 void		KeeperMain(Datum);
-static void setupKeeper(void);
-static void doPromote(void);
-static void doAfterCommand(void);
-static bool heartbeatPrimaryServer(void);
 
 /* Function for signal handler */
 static void pg_keeper_sigterm(SIGNAL_ARGS);
 static void pg_keeper_sighup(SIGNAL_ARGS);
 
 /* flags set by signal handlers */
-static volatile sig_atomic_t got_sighup = false;
-static volatile sig_atomic_t got_sigterm = false;
+sig_atomic_t got_sighup = false;
+sig_atomic_t got_sigterm = false;
 
 /* GUC variables */
-static int	keeper_keepalives_time;
-static int	keeper_keepalives_count;
-static char	*keeper_primary_conninfo;
-static char *keeper_after_command;
+int	keeper_keepalives_time;
+int	keeper_keepalives_count;
 
-/* Variables for connections */
-static char conninfo[MAXPGPATH];
-
-/* Variables for cluster management */
-static int retry_count;
-
-typedef struct worktable
-{
-	const char *schema;
-	const char *name;
-} worktable;
-
+int	current_mode;
 
 /*
  * Signal handler for SIGTERM
@@ -91,201 +87,40 @@ pg_keeper_sighup(SIGNAL_ARGS)
 }
 
 /*
- * Set up several parameters for a worker process
- */
-static void
-setupKeeper(void)
-{
-	PGconn *con;
-
-	/* Set up variables */
-	snprintf(conninfo, MAXPGPATH, "%s", keeper_primary_conninfo);
-	retry_count = 0;
-
-	/* Connection confirm */
-	if(!(con = PQconnectdb(conninfo)))
-	{
-		ereport(LOG,
-				(errmsg("could not establish connection to primary server : %s", conninfo)));
-		proc_exit(1);
-	}
-
-	PQfinish(con);
-	return;
-}
-
-/*
- * headbeatPrimaryServer()
- *
- * This fucntion does heatbeating to primary server. If could not establish connection
- * to primary server, or primary server didn't reaction, return false.
- */
-static bool
-heartbeatPrimaryServer(void)
-{
-	PGconn		*con;
-	PGresult 	*res;
-
-	/* Try to connect to primary server */
-	if ((con = PQconnectdb(conninfo)) == NULL)
-	{
-		ereport(LOG,
-				(errmsg("Could not establish conenction to primary server at %d time(s)",
-						(retry_count + 1))));
-		PQfinish(con);
-		return false;
-	}
-
-	res = PQexec(con, HEARTBEAT_SQL);
-
-	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-	{
-		/* Failed to ping to master server, report the number of retrying */
-		ereport(LOG,
-				(errmsg("could not get tuple from primary server at %d time(s)",
-						(retry_count + 1))));
-		PQfinish(con);
-		return false;
-	}
-
-	/* Primary server is alive now */
-	PQfinish(con);
-	return true;
-}
-
-/*
- * Main routine of pg_keeper.
+ * Entry point for pg_keeper.
  */
 void
 KeeperMain(Datum main_arg)
 {
-	setupKeeper();
-		
+	int ret;
+
+	/* Determine keeper mode */
+	current_mode = RecoveryInProgress() ? KEEPER_STANDBY_MODE : KEEPER_MASTER_MODE;
+
 	/* Establish signal handlers before unblocking signals */
 	pqsignal(SIGHUP, pg_keeper_sighup);
 	pqsignal(SIGTERM, pg_keeper_sigterm);
-	
+
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
 
-	/*
-	 * Main loop: do this until the SIGTERM handler tells us to terminate
-	 */
-	while (!got_sigterm)
+	if (current_mode == KEEPER_MASTER_MODE)
 	{
-		int		rc;
-
-		/*
-		 * Background workers mustn't call usleep() or any direct equivalent:
-		 * instead, they may wait on their process latch, which sleeps as
-		 * necessary, but is awakened if postmaster dies.  That way the
-		 * background process goes away immediately in an emergency.
-		 */
-		rc = WaitLatch(&MyProc->procLatch,
-					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   keeper_keepalives_time * 1000L);
-		ResetLatch(&MyProc->procLatch);
-
-		/* Emergency bailout if postmaster has died */
-		if (rc & WL_POSTMASTER_DEATH)
-			proc_exit(1);
-
-		/* If got SIGHUP, reload the configuration file */
-		if (got_sighup)
-		{
-			got_sighup = false;
-			ProcessConfigFile(PGC_SIGHUP);
-		}
-
-		/*
-		 * Do heartbeat connection to master server. If heartbeat is failed,
-		 * increment retry_count..
-		 */
-		if (!heartbeatPrimaryServer())
-			retry_count++;
-
-		/* If retry_count is reached to keeper_keepalives_count,
-		 * do promote the standby server to master server, and exit.
-		 */
-		if (retry_count >= keeper_keepalives_count)
-		{
-			doPromote();
-
-			/* If after command is given, execute it */
-			if (keeper_after_command)
-				doAfterCommand();
-
-			proc_exit(0);
-		}
+		setupKeeperMaster();
+		ret = KeeperMainMaster();
 	}
-
-	proc_exit(1);
-}
-
-/*
- * doPromote()
- *
- * Promote standby server using ordinally way which is used by
- * pg_ctl client tool. Put trigger file into $PGDATA, and send
- * SIGUSR1 signal to standby server.
- */
-static void
-doPromote(void)
-{
-	char trigger_filepath[MAXPGPATH];
-	FILE *fp;
-
-    snprintf(trigger_filepath, 1000, "%s/promote", DataDir);
-
-	if ((fp = fopen(trigger_filepath, "w")) == NULL)
+	else if (current_mode == KEEPER_STANDBY_MODE)
 	{
-		ereport(LOG,
-				(errmsg("could not create promote file: \"%s\"", trigger_filepath)));
+		setupKeeperStandby();
+		ret = KeeperMainStandby();
+	}
+	else
+	{
+		ereport(WARNING, (errmsg("invalid keeper mode : \"%d\"", current_mode)));
 		proc_exit(1);
 	}
 
-	if (fclose(fp))
-	{
-		ereport(LOG,
-				(errmsg("could not close promote file: \"%s\"", trigger_filepath)));
-		proc_exit(1);
-	}
-
-	ereport(LOG,
-			(errmsg("promote standby server to primary server")));
-
-	/* Do promote */
-	if (kill(PostmasterPid, SIGUSR1) != 0)
-	{
-		ereport(LOG,
-				(errmsg("failed to send SIGUSR1 signal to postmaster process : %d",
-						PostmasterPid)));
-		proc_exit(1);
-	}
-}
-
-/*
- * Attempt to execute an external shell command after promotion.
- */
-static void
-doAfterCommand(void)
-{
-	int	rc;
-
-	Assert(keeper_after_command);
-
-	ereport(LOG,
-			(errmsg("executing after promoting command \"%s\"",
-					keeper_after_command)));
-
-	rc = system(keeper_after_command);
-
-	if (rc != 0)
-	{
-		ereport(LOG,
-				(errmsg("failed to execute after promoting command \"%s\"",
-						keeper_after_command)));
-	}
+	proc_exit(ret);
 }
 
 /*
@@ -330,26 +165,26 @@ _PG_init(void)
 							NULL);
 
 	DefineCustomStringVariable("pg_keeper.primary_conninfo",
-							"Connection information for primary server",
-							NULL,
-							&keeper_primary_conninfo,
-							NULL,
-							PGC_POSTMASTER,
-							0,
-							NULL,
-							NULL,
-							NULL);
+							   "Connection information for primary server",
+							   NULL,
+							   &keeper_primary_conninfo,
+							   NULL,
+							   PGC_POSTMASTER,
+							   0,
+							   NULL,
+							   NULL,
+							   NULL);
 
 	DefineCustomStringVariable("pg_keeper.after_command",
 							   "Shell command that will be called after promoted",
-							NULL,
-							&keeper_after_command,
-							NULL,
-							PGC_SIGHUP,
-							0,
-							NULL,
-							NULL,
-							NULL);
+							   NULL,
+							   &keeper_after_command,
+							   NULL,
+							   PGC_SIGHUP,
+							   GUC_NOT_IN_SAMPLE,
+							   NULL,
+							   NULL,
+							   NULL);
 
 	/* set up common data for all our workers */
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |

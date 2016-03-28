@@ -1,12 +1,10 @@
 # pg_keeper/Makefile
 
 MODULE_big = pg_keeper
-OBJS = pg_keeper.o
+OBJS = pg_keeper.o master.o standby.o
 
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK = $(libpq)
-
-REGRESS = pg_keeper
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config
