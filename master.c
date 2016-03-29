@@ -127,6 +127,8 @@ changeToAsync(void)
 {
 	int ret;
 
+	ereport(LOG, (errmsg("change to asynchronous replication")));
+
     SPI_connect();
 
 	ret = SPI_execute(ALTER_SYSTEM_COMMAND, true, 0);
