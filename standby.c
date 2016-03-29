@@ -24,6 +24,7 @@
 /* these headers are used by this particular worker's code */
 #include "tcop/utility.h"
 #include "libpq-int.h"
+#include "utils/ps_status.h"
 
 #define	HEARTBEAT_SQL "select 1;"
 
@@ -34,7 +35,7 @@ static void doPromote(void);
 static void doAfterCommand(void);
 
 /* GUC variables */
-char	*keeper_primary_conninfo;
+char	*keeper_node2_conninfo;
 char	*keeper_after_command;
 
 /* Variables for heartbeat */
@@ -52,12 +53,15 @@ setupKeeperStandby()
 	retry_count = 0;
 
 	/* Connection confirm */
-	if(!(con = PQconnectdb(keeper_primary_conninfo)))
+	if(!(con = PQconnectdb(KeeperMaster)))
 		ereport(ERROR,
 				(errmsg("could not establish connection to primary server : %s",
-						keeper_primary_conninfo)));
+						KeeperMaster)));
 
 	PQfinish(con);
+
+	/* Set process display which is exposed by ps command */
+	set_ps_display("(standby mode:connected)", false);
 
 	return;
 }
@@ -68,8 +72,6 @@ setupKeeperStandby()
 bool
 KeeperMainStandby(void)
 {
-	elog(LOG, "entering pg_keeper standby mode");
-
 	/*
 	 * Main loop: do this until the SIGTERM handler tells us to terminate
 	 */
@@ -103,7 +105,7 @@ KeeperMainStandby(void)
 		 * Pooling to master server. If heartbeat is failed,
 		 * increment retry_count..
 		 */
-		if (!heartbeatServer(keeper_primary_conninfo, retry_count))
+		if (!heartbeatServer(KeeperMaster, retry_count))
 			retry_count++;
 		else
 			retry_count = 0; /* reset count */

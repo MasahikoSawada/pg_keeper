@@ -31,6 +31,8 @@ extern void	_PG_init(void);
 extern void	KeeperMain(Datum);
 extern bool	heartbeatServer(const char *conninfo, int r_count);
 extern bool execSQL(const char *conninfo, const char *sql);
+extern char *KeeperMaster;
+extern char *KeeperStandby;
 sig_atomic_t got_sighup;
 sig_atomic_t got_sigterm;
 
@@ -46,9 +48,9 @@ extern void setupKeeperStandby(void);
 /* GUC variables */
 extern int	keeper_keepalives_time;
 extern int	keeper_keepalives_count;
-extern char	*keeper_primary_conninfo;
-extern char *keeper_slave_conninfo;
-extern char	*keeper_after_command;
+extern char *keeper_node1_conninfo;
+extern char	*keeper_node2_conninfo;
+extern char *keeper_after_command;
 
 /* Variables for cluster management */
 extern int	current_mode;

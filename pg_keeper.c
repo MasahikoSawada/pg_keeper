@@ -60,79 +60,11 @@ sig_atomic_t got_sigterm = false;
 int	keeper_keepalives_time;
 int	keeper_keepalives_count;
 
+/* Pointer to master/standby server connection infromation */
+char *KeeperMaster;
+char *KeeperStandby;
+
 int	current_mode;
-
-/*
- * Signal handler for SIGTERM
- *		Set a flag to let the main loop to terminate, and set our latch to wake
- *		it up.
- */
-static void
-pg_keeper_sigterm(SIGNAL_ARGS)
-{
-	int			save_errno = errno;
-
-	got_sigterm = true;
-	if (MyProc)
-		SetLatch(&MyProc->procLatch);
-
-	errno = save_errno;
-}
-
-/*
- * Signal handler for SIGHUP
- *		Set a flag to let the main loop to reread the config file, and set
- *		our latch to wake it up.
- */
-static void
-pg_keeper_sighup(SIGNAL_ARGS)
-{
-	got_sighup = true;
-	if (MyProc)
-		SetLatch(&MyProc->procLatch);
-}
-
-/*
- * Entry point for pg_keeper.
- */
-void
-KeeperMain(Datum main_arg)
-{
-	int ret;
-
-	/* Sanity check */
-	checkParameter();
-
-	/* Determine keeper mode */
-	current_mode = RecoveryInProgress() ? KEEPER_STANDBY_MODE : KEEPER_MASTER_MODE;
-
-	/* Establish signal handlers before unblocking signals */
-	pqsignal(SIGHUP, pg_keeper_sighup);
-	pqsignal(SIGTERM, pg_keeper_sigterm);
-
-	/* We're now ready to receive signals */
-	BackgroundWorkerUnblockSignals();
-
-	/* Connect to our database */
-	BackgroundWorkerInitializeConnection("postgres", NULL);
-
-	if (current_mode == KEEPER_MASTER_MODE)
-	{
-		/* Routine for master_mode */
-		setupKeeperMaster();
-		ret = KeeperMainMaster();
-	}
-	else if (current_mode == KEEPER_STANDBY_MODE)
-	{
-		/* Routine for standby_mode */
-		setupKeeperStandby();
-		ret = KeeperMainStandby();
-	}
-	else
-		ereport(ERROR, (errmsg("invalid keeper mode : \"%d\"", current_mode)));
-
-	proc_exit(ret);
-}
 
 /*
  * Entrypoint of this module.
@@ -175,10 +107,10 @@ _PG_init(void)
 							NULL,
 							NULL);
 
-	DefineCustomStringVariable("pg_keeper.primary_conninfo",
-							   "Connection information for primary server",
+	DefineCustomStringVariable("pg_keeper.node1_conninfo",
+							   "Connection information for node1 server (first master server)",
 							   NULL,
-							   &keeper_primary_conninfo,
+							   &keeper_node1_conninfo,
 							   NULL,
 							   PGC_POSTMASTER,
 							   0,
@@ -186,10 +118,10 @@ _PG_init(void)
 							   NULL,
 							   NULL);
 
-	DefineCustomStringVariable("pg_keeper.slave_conninfo",
-							   "Connection information for slave server",
+	DefineCustomStringVariable("pg_keeper.node2_conninfo",
+							   "Connection information for node2 server (first standby server)",
 							   NULL,
-							   &keeper_slave_conninfo,
+							   &keeper_node2_conninfo,
 							   NULL,
 							   PGC_POSTMASTER,
 							   0,
@@ -223,6 +155,106 @@ _PG_init(void)
 	RegisterBackgroundWorker(&worker);
 }
 
+/*
+ * Signal handler for SIGTERM
+ *		Set a flag to let the main loop to terminate, and set our latch to wake
+ *		it up.
+ */
+static void
+pg_keeper_sigterm(SIGNAL_ARGS)
+{
+	int			save_errno = errno;
+
+	got_sigterm = true;
+	if (MyProc)
+		SetLatch(&MyProc->procLatch);
+
+	errno = save_errno;
+}
+
+/*
+ * Signal handler for SIGHUP
+ *		Set a flag to let the main loop to reread the config file, and set
+ *		our latch to wake it up.
+ */
+static void
+pg_keeper_sighup(SIGNAL_ARGS)
+{
+	got_sighup = true;
+	if (MyProc)
+		SetLatch(&MyProc->procLatch);
+}
+
+/*
+ * Entry point for pg_keeper.
+ */
+void
+KeeperMain(Datum main_arg)
+{
+	int ret;
+
+	/* Sanity check */
+	checkParameter();
+
+	/* Initial setting */
+	KeeperMaster = keeper_node1_conninfo;
+	KeeperStandby = keeper_node2_conninfo;
+
+	/* Determine keeper mode */
+	current_mode = RecoveryInProgress() ? KEEPER_STANDBY_MODE : KEEPER_MASTER_MODE;
+
+	/* Establish signal handlers before unblocking signals */
+	pqsignal(SIGHUP, pg_keeper_sighup);
+	pqsignal(SIGTERM, pg_keeper_sigterm);
+
+	/* We're now ready to receive signals */
+	BackgroundWorkerUnblockSignals();
+
+	/* Connect to our database */
+	BackgroundWorkerInitializeConnection("postgres", NULL);
+
+exec:
+
+	if (current_mode == KEEPER_MASTER_MODE)
+	{
+		/* Routine for master_mode */
+		setupKeeperMaster();
+		ret = KeeperMainMaster();
+	}
+	else if (current_mode == KEEPER_STANDBY_MODE)
+	{
+		/* Routine for standby_mode */
+		setupKeeperStandby();
+		ret = KeeperMainStandby();
+
+		/*
+		 * After promoting is sucessfully done, attempt to re-execute
+		 * main routine as master mode in order to avoid to restart
+		 * for invoking pg_keeper process again.
+		 */
+		if (ret)
+		{
+			char *tmp;
+
+			/* Change mode to master mode */
+			current_mode = KEEPER_MASTER_MODE;
+
+			/* Switch master and standby connection information */
+			tmp = KeeperMaster;
+			KeeperMaster= KeeperStandby;
+			KeeperStandby = tmp;
+
+			ereport(LOG,
+					(errmsg("\"%s\" is regarded as master server, \"%s\" is regarded as standby server",
+							KeeperMaster, KeeperStandby)));
+			goto exec;
+		}
+	}
+	else
+		ereport(ERROR, (errmsg("invalid keeper mode : \"%d\"", current_mode)));
+
+	proc_exit(ret);
+}
 
 /*
  * headbeatServer()
@@ -286,9 +318,9 @@ execSQL(const char *conninfo, const char *sql)
 static void
 checkParameter()
 {
-	if (keeper_primary_conninfo == NULL || keeper_primary_conninfo[0] == '\0')
-		elog(ERROR, "pg_keeper.primary_conninfo must be specified.");
+	if (keeper_node1_conninfo == NULL || keeper_node1_conninfo[0] == '\0')
+		elog(ERROR, "pg_keeper.node1_conninfo must be specified.");
 
-	if (keeper_slave_conninfo == NULL || keeper_slave_conninfo[0] == '\0')
-		elog(ERROR, "pg_keeper.slave_conninfo must be specified.");
+	if (keeper_node2_conninfo == NULL || keeper_node2_conninfo[0] == '\0')
+		elog(ERROR, "pg_keeper.node2_conninfo must be specified.");
 }

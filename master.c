@@ -28,6 +28,7 @@
 #include "libpq-int.h"
 #include "tcop/utility.h"
 #include "utils/snapmgr.h"
+#include "utils/ps_status.h"
 
 
 #define ALTER_SYSTEM_COMMAND "ALTER SYSTEM SET synchronous_standby_names TO '';"
@@ -39,11 +40,11 @@ void	setupKeeperMaster(void);
 static void changeToAsync(void);
 static bool checkStandbyIsConnected(void);
 
-/* GUC variables */
-char	*keeper_slave_conninfo;
-
 /* Variables for heartbeat */
 static int retry_count;
+
+/* GUC variables */
+char	*keeper_node1_conninfo;
 
 /* Other variables */
 bool	standby_connected;
@@ -56,6 +57,10 @@ setupKeeperMaster()
 {
 	/* Set up variable */
 	retry_count = 0;
+
+	/* Set process display which is exposed by ps command */
+	set_ps_display("(master mode)", false);
+
 	return;
 }
 
@@ -65,8 +70,6 @@ setupKeeperMaster()
 bool
 KeeperMainMaster(void)
 {
-	elog(LOG, "entering pg_keeper master mode");
-
 	/*
 	 * Main loop: do this until the SIGTERM handler tells us to terminate
 	 */
@@ -107,8 +110,8 @@ KeeperMainMaster(void)
 			/* Standby connected */
 			if (standby_connected)
 			{
+				set_ps_display("(master mode:connected)", false);
 				retry_count = 0;
-				elog(LOG, "connceting standby server found");
 			}
 		}
 		else
@@ -117,7 +120,7 @@ KeeperMainMaster(void)
 			 * Pooling to standby server. If heartbeat is failed,
 			 * increment retry_count..
 			 */
-			if (!heartbeatServer(keeper_slave_conninfo, retry_count))
+			if (!heartbeatServer(KeeperStandby, retry_count))
 				retry_count++;
 			else
 				retry_count = 0; /* reset count */
@@ -142,24 +145,25 @@ KeeperMainMaster(void)
 
 /*
  * Change synchronous replication to *asynchronous* replication
- * using by ALTER SYSTEM command.
+ * using by ALTER SYSTEM command up to 5 times.
  * XXX : Could we execute this via SPI instead?
  */
 static void
 changeToAsync(void)
 {
-	ereport(LOG, (errmsg("change to asynchronous replication")));
+	int ret;
 
-	/* Execute ALTER SYSTEM command via libpq */
-	if(!(execSQL(keeper_primary_conninfo, ALTER_SYSTEM_COMMAND)))
+	elog(LOG, "change to asynchronous replication");
+
+	/* Attempt to execute ALTER SYSTEM command */
+	if (!execSQL(KeeperMaster, ALTER_SYSTEM_COMMAND))
 		ereport(ERROR,
 				(errmsg("failed to execute ALTER SYSTEM to change to asynchronous replication")));
 
 	/* Then, send SIGHUP signal to Postmaster process */
-	if (kill(PostmasterPid, SIGHUP) != 0)
+	if ((ret = kill(PostmasterPid, SIGHUP)) != 0)
 		ereport(ERROR,
-				(errmsg("failed to send SIGUSR1 signal to postmaster process : %d",
-						PostmasterPid)));
+				(errmsg("failed to send SIGHUP signal to postmaster process : %d", ret)));
 }
 
 /*
