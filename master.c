@@ -23,15 +23,21 @@
 #include "storage/shmem.h"
 
 /* these headers are used by this particular worker's code */
-#include "tcop/utility.h"
+#include "access/xact.h"
+#include "executor/spi.h"
 #include "libpq-int.h"
+#include "tcop/utility.h"
+#include "utils/snapmgr.h"
 
-#define ALTER_SYSTEM_COMMAND "ALTER SYSTEM synchronous_standby_names TO '';"
+
+#define ALTER_SYSTEM_COMMAND "ALTER SYSTEM SET synchronous_standby_names TO '';"
+#define STAT_REPLICATION_COMMAND "SELECT * FROM pg_stat_replication;"
 
 bool	KeeperMainMaster(void);
 void	setupKeeperMaster(void);
 
 static void changeToAsync(void);
+static bool checkStandbyIsConnected(void);
 
 /* GUC variables */
 char	*keeper_slave_conninfo;
@@ -40,7 +46,7 @@ char	*keeper_slave_conninfo;
 static int retry_count;
 
 /* Other variables */
-bool	syncrep_enabled;
+bool	standby_connected;
 
 /*
  * Set up several parameters for master mode.
@@ -48,25 +54,10 @@ bool	syncrep_enabled;
 void
 setupKeeperMaster()
 {
-	PGconn *con;
-
-	/* Set up variables */
+	/* Set up variable */
 	retry_count = 0;
-
-	/* Confirm connection in advance */
-	if (!(con = PQconnectdb(keeper_slave_conninfo)))
-	{
-		ereport(LOG,
-				(errmsg("could not establish connection to slave server : %s",
-						keeper_slave_conninfo)));
-		proc_exit(1);
-	}
-
-	PQfinish(con);
-
 	return;
 }
-
 
 /*
  * Main routine for master mode
@@ -105,13 +96,44 @@ KeeperMainMaster(void)
 			ProcessConfigFile(PGC_SIGHUP);
 		}
 
-		if (!heartbeatServer(keeper_slave_conninfo, retry_count))
-			retry_count++;
-
-		if (retry_count >= keeper_keepalives_count)
+		/*
+		 * We get started pooling to standby server after
+		 * a standby server connected to master server.
+		 */
+		if (!standby_connected)
 		{
-			changeToAsync();
-			break;
+			standby_connected = checkStandbyIsConnected();
+
+			/* Standby connected */
+			if (standby_connected)
+			{
+				retry_count = 0;
+				elog(LOG, "connceting standby server found");
+			}
+		}
+		else
+		{
+			/*
+			 * Pooling to standby server. If heartbeat is failed,
+			 * increment retry_count..
+			 */
+			if (!heartbeatServer(keeper_slave_conninfo, retry_count))
+				retry_count++;
+			else
+				retry_count = 0; /* reset count */
+
+			/*
+			 * Change to asynchronous replication using ALTER SYSTEM
+			 * command iff master server could not connect to standby server
+			 * more than keeper_keepalives_count counts *in a row*.
+			 */
+			if (retry_count >= keeper_keepalives_count)
+			{
+				changeToAsync();
+				standby_connected = false;
+				break;
+				/* XXX : Can we avoid to exit process? */
+			}
 		}
 	}
 
@@ -121,32 +143,51 @@ KeeperMainMaster(void)
 /*
  * Change synchronous replication to *asynchronous* replication
  * using by ALTER SYSTEM command.
+ * XXX : Could we execute this via SPI instead?
  */
 static void
 changeToAsync(void)
 {
-	int ret;
-
 	ereport(LOG, (errmsg("change to asynchronous replication")));
 
-    SPI_connect();
-
-	ret = SPI_execute(ALTER_SYSTEM_COMMAND, true, 0);
-
-	if (ret != SPI_OK_UTILITY)
-	{
-		ereport(LOG,
+	/* Execute ALTER SYSTEM command via libpq */
+	if(!(execSQL(keeper_primary_conninfo, ALTER_SYSTEM_COMMAND)))
+		ereport(ERROR,
 				(errmsg("failed to execute ALTER SYSTEM to change to asynchronous replication")));
-		proc_exit(1);
-	}
 
-    SPI_finish();
-
+	/* Then, send SIGHUP signal to Postmaster process */
 	if (kill(PostmasterPid, SIGHUP) != 0)
-	{
-		ereport(LOG,
+		ereport(ERROR,
 				(errmsg("failed to send SIGUSR1 signal to postmaster process : %d",
 						PostmasterPid)));
-		proc_exit(1);
-	}
+}
+
+/*
+ * Check if any standby server has conncted to master server
+ * through checking pg_stat_replication system view via SPI.
+ */
+static bool
+checkStandbyIsConnected()
+{
+	int ret;
+	bool found;
+
+	SetCurrentStatementStartTimestamp();
+	StartTransactionCommand();
+	SPI_connect();
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	ret = SPI_exec(STAT_REPLICATION_COMMAND, 0);
+
+	if (ret != SPI_OK_SELECT)
+		ereport(ERROR,
+				(errmsg("failed to execute SELECT to confirm connecting standby server")));
+
+	found = SPI_processed >= 1;
+
+	SPI_finish();
+	PopActiveSnapshot();
+	CommitTransactionCommand();
+
+	return found;
 }

@@ -46,6 +46,8 @@ void	KeeperMain(Datum);
 bool	heartbeatServer(const char *conninfo, int r_count);
 bool	execSQL(const char *conninfo, const char *sql);
 
+static void checkParameter(void);
+
 /* Function for signal handler */
 static void pg_keeper_sigterm(SIGNAL_ARGS);
 static void pg_keeper_sighup(SIGNAL_ARGS);
@@ -98,6 +100,9 @@ KeeperMain(Datum main_arg)
 {
 	int ret;
 
+	/* Sanity check */
+	checkParameter();
+
 	/* Determine keeper mode */
 	current_mode = RecoveryInProgress() ? KEEPER_STANDBY_MODE : KEEPER_MASTER_MODE;
 
@@ -108,21 +113,23 @@ KeeperMain(Datum main_arg)
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
 
+	/* Connect to our database */
+	BackgroundWorkerInitializeConnection("postgres", NULL);
+
 	if (current_mode == KEEPER_MASTER_MODE)
 	{
+		/* Routine for master_mode */
 		setupKeeperMaster();
 		ret = KeeperMainMaster();
 	}
 	else if (current_mode == KEEPER_STANDBY_MODE)
 	{
+		/* Routine for standby_mode */
 		setupKeeperStandby();
 		ret = KeeperMainStandby();
 	}
 	else
-	{
-		ereport(WARNING, (errmsg("invalid keeper mode : \"%d\"", current_mode)));
-		proc_exit(1);
-	}
+		ereport(ERROR, (errmsg("invalid keeper mode : \"%d\"", current_mode)));
 
 	proc_exit(ret);
 }
@@ -230,7 +237,7 @@ heartbeatServer(const char *conninfo, int r_count)
 	if (!(execSQL(conninfo, HEARTBEAT_SQL)))
 	{
 		ereport(LOG,
-				(errmsg("%d time(s) failed", r_count)));
+				(errmsg("pg_keeper failed to execute %d time(s)", r_count + 1)));
 		return false;
 	}
 
@@ -250,7 +257,8 @@ execSQL(const char *conninfo, const char *sql)
 	if ((con = PQconnectdb(conninfo)) == NULL)
 	{
 		ereport(LOG,
-				(errmsg("Could not establish conenction to primary server")));
+				(errmsg("could not establish conenction to server : \"%s\"",
+					conninfo)));
 
 		PQfinish(con);
 		return false;
@@ -258,11 +266,13 @@ execSQL(const char *conninfo, const char *sql)
 
 	res = PQexec(con, sql);
 
-	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+	if (PQresultStatus(res) != PGRES_TUPLES_OK &&
+		PQresultStatus(res) != PGRES_COMMAND_OK)
 	{
 		/* Failed to ping to master server, report the number of retrying */
 		ereport(LOG,
-				(errmsg("could not get tuple from primary server")));
+				(errmsg("could not get tuple from server : \"%s\"",
+					conninfo)));
 
 		PQfinish(con);
 		return false;
@@ -271,4 +281,14 @@ execSQL(const char *conninfo, const char *sql)
 	/* Primary server is alive now */
 	PQfinish(con);
 	return true;
+}
+
+static void
+checkParameter()
+{
+	if (keeper_primary_conninfo == NULL || keeper_primary_conninfo[0] == '\0')
+		elog(ERROR, "pg_keeper.primary_conninfo must be specified.");
+
+	if (keeper_slave_conninfo == NULL || keeper_slave_conninfo[0] == '\0')
+		elog(ERROR, "pg_keeper.slave_conninfo must be specified.");
 }

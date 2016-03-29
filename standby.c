@@ -53,12 +53,9 @@ setupKeeperStandby()
 
 	/* Connection confirm */
 	if(!(con = PQconnectdb(keeper_primary_conninfo)))
-	{
-		ereport(LOG,
+		ereport(ERROR,
 				(errmsg("could not establish connection to primary server : %s",
 						keeper_primary_conninfo)));
-		proc_exit(1);
-	}
 
 	PQfinish(con);
 
@@ -103,13 +100,16 @@ KeeperMainStandby(void)
 		}
 
 		/*
-		 * Do heartbeat connection to master server. If heartbeat is failed,
+		 * Pooling to master server. If heartbeat is failed,
 		 * increment retry_count..
 		 */
 		if (!heartbeatServer(keeper_primary_conninfo, retry_count))
 			retry_count++;
+		else
+			retry_count = 0; /* reset count */
 
-		/* If retry_count is reached to keeper_keepalives_count,
+		/*
+		 * If retry_count is reached to keeper_keepalives_count,
 		 * do promote the standby server to master server, and exit.
 		 */
 		if (retry_count >= keeper_keepalives_count)
@@ -120,6 +120,7 @@ KeeperMainStandby(void)
 			if (keeper_after_command)
 				doAfterCommand();
 
+			/* XXX : Could we change to master_mode instead of exit? */
 			return true;
 		}
 	}
@@ -128,8 +129,6 @@ KeeperMainStandby(void)
 }
 
 /*
- * doPromote()
- *
  * Promote standby server using ordinally way which is used by
  * pg_ctl client tool. Put trigger file into $PGDATA, and send
  * SIGUSR1 signal to standby server.
@@ -140,33 +139,23 @@ doPromote(void)
 	char trigger_filepath[MAXPGPATH];
 	FILE *fp;
 
+	/* Create promote file newly */
     snprintf(trigger_filepath, 1000, "%s/promote", DataDir);
-
 	if ((fp = fopen(trigger_filepath, "w")) == NULL)
-	{
-		ereport(LOG,
+		ereport(ERROR,
 				(errmsg("could not create promote file: \"%s\"", trigger_filepath)));
-		proc_exit(1);
-	}
 
 	if (fclose(fp))
-	{
-		ereport(LOG,
+		ereport(ERROR,
 				(errmsg("could not close promote file: \"%s\"", trigger_filepath)));
-		proc_exit(1);
-	}
 
-	ereport(LOG,
-			(errmsg("promote standby server to primary server")));
+	elog(LOG,"promote standby server to primary server");
 
 	/* Do promote */
 	if (kill(PostmasterPid, SIGUSR1) != 0)
-	{
-		ereport(LOG,
+		ereport(ERROR,
 				(errmsg("failed to send SIGUSR1 signal to postmaster process : %d",
 						PostmasterPid)));
-		proc_exit(1);
-	}
 }
 
 /*
