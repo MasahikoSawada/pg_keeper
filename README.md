@@ -33,6 +33,7 @@ With this, fail over time can be calculated with this formula.
 Specifies a connection string to be used for pg_keeper to connect to the master - which should be the same as the master server specified in recovery.conf.
 
 - pg_keeper.slave_conninfo(*)
+
 Specifies a connection string to be used for pg_keeper to connect to the standby.
 
 - pg_keeper.keepalive_time (sec)
