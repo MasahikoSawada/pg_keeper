@@ -32,54 +32,13 @@ void	setupKeeperStandby(void);
 
 static void doPromote(void);
 static void doAfterCommand(void);
-static bool heartbeatPrimaryServer(void);
 
 /* GUC variables */
 char	*keeper_primary_conninfo;
 char	*keeper_after_command;
 
-/* Variables for hearbeat */
-static char conninfo[MAXPGPATH];
+/* Variables for heartbeat */
 static int retry_count;
-
-/*
- * headbeatPrimaryServer()
- *
- * This fucntion does heatbeating to primary server. If could not establish connection
- * to primary server, or primary server didn't reaction, return false.
- */
-static bool
-heartbeatPrimaryServer(void)
-{
-	PGconn		*con;
-	PGresult 	*res;
-
-	/* Try to connect to primary server */
-	if ((con = PQconnectdb(conninfo)) == NULL)
-	{
-		ereport(LOG,
-				(errmsg("Could not establish conenction to primary server at %d time(s)",
-						(retry_count + 1))));
-		PQfinish(con);
-		return false;
-	}
-
-	res = PQexec(con, HEARTBEAT_SQL);
-
-	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-	{
-		/* Failed to ping to master server, report the number of retrying */
-		ereport(LOG,
-				(errmsg("could not get tuple from primary server at %d time(s)",
-						(retry_count + 1))));
-		PQfinish(con);
-		return false;
-	}
-
-	/* Primary server is alive now */
-	PQfinish(con);
-	return true;
-}
 
 /*
  * Set up several parameters for standby mode.
@@ -90,14 +49,14 @@ setupKeeperStandby()
 	PGconn *con;
 
 	/* Set up variables */
-	snprintf(conninfo, MAXPGPATH, "%s", keeper_primary_conninfo);
 	retry_count = 0;
 
 	/* Connection confirm */
-	if(!(con = PQconnectdb(conninfo)))
+	if(!(con = PQconnectdb(keeper_primary_conninfo)))
 	{
 		ereport(LOG,
-				(errmsg("could not establish connection to primary server : %s", conninfo)));
+				(errmsg("could not establish connection to primary server : %s",
+						keeper_primary_conninfo)));
 		proc_exit(1);
 	}
 
@@ -147,7 +106,7 @@ KeeperMainStandby(void)
 		 * Do heartbeat connection to master server. If heartbeat is failed,
 		 * increment retry_count..
 		 */
-		if (!heartbeatPrimaryServer())
+		if (!heartbeatServer(keeper_primary_conninfo, retry_count))
 			retry_count++;
 
 		/* If retry_count is reached to keeper_keepalives_count,

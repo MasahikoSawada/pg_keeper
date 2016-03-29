@@ -13,6 +13,7 @@
 
 /* These are always necessary for a bgworker */
 #include "access/xlog.h"
+#include "executor/spi.h"
 #include "miscadmin.h"
 #include "postmaster/bgworker.h"
 #include "storage/ipc.h"
@@ -25,8 +26,21 @@
 #include "tcop/utility.h"
 #include "libpq-int.h"
 
+#define ALTER_SYSTEM_COMMAND "ALTER SYSTEM synchronous_standby_names TO '';"
+
 bool	KeeperMainMaster(void);
 void	setupKeeperMaster(void);
+
+static void changeToAsync(void);
+
+/* GUC variables */
+char	*keeper_slave_conninfo;
+
+/* Variables for heartbeat */
+static int retry_count;
+
+/* Other variables */
+bool	syncrep_enabled;
 
 /*
  * Set up several parameters for master mode.
@@ -34,8 +48,22 @@ void	setupKeeperMaster(void);
 void
 setupKeeperMaster()
 {
+	PGconn *con;
 
-	/* Do something for master mode */
+	/* Set up variables */
+	retry_count = 0;
+
+	/* Confirm connection in advance */
+	if (!(con = PQconnectdb(keeper_slave_conninfo)))
+	{
+		ereport(LOG,
+				(errmsg("could not establish connection to slave server : %s",
+						keeper_slave_conninfo)));
+		proc_exit(1);
+	}
+
+	PQfinish(con);
+
 	return;
 }
 
@@ -77,8 +105,46 @@ KeeperMainMaster(void)
 			ProcessConfigFile(PGC_SIGHUP);
 		}
 
-		/* Do something for master server */
+		if (!heartbeatServer(keeper_slave_conninfo, retry_count))
+			retry_count++;
+
+		if (retry_count >= keeper_keepalives_count)
+		{
+			changeToAsync();
+			break;
+		}
 	}
 
 	return true;
+}
+
+/*
+ * Change synchronous replication to *asynchronous* replication
+ * using by ALTER SYSTEM command.
+ */
+static void
+changeToAsync(void)
+{
+	int ret;
+
+    SPI_connect();
+
+	ret = SPI_execute(ALTER_SYSTEM_COMMAND, true, 0);
+
+	if (ret != SPI_OK_UTILITY)
+	{
+		ereport(LOG,
+				(errmsg("failed to execute ALTER SYSTEM to change to asynchronous replication")));
+		proc_exit(1);
+	}
+
+    SPI_finish();
+
+	if (kill(PostmasterPid, SIGHUP) != 0)
+	{
+		ereport(LOG,
+				(errmsg("failed to send SIGUSR1 signal to postmaster process : %d",
+						PostmasterPid)));
+		proc_exit(1);
+	}
 }

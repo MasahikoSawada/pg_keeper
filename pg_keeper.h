@@ -17,6 +17,9 @@
 #include "storage/proc.h"
 #include "storage/shmem.h"
 
+#include "tcop/utility.h"
+#include "libpq-int.h"
+
 typedef struct worktable
 {
 	const char *schema;
@@ -26,6 +29,8 @@ typedef struct worktable
 /* pg_keeper.c */
 extern void	_PG_init(void);
 extern void	KeeperMain(Datum);
+extern bool	heartbeatServer(const char *conninfo, int r_count);
+extern bool execSQL(const char *conninfo, const char *sql);
 sig_atomic_t got_sighup;
 sig_atomic_t got_sigterm;
 
@@ -42,6 +47,7 @@ extern void setupKeeperStandby(void);
 extern int	keeper_keepalives_time;
 extern int	keeper_keepalives_count;
 extern char	*keeper_primary_conninfo;
+extern char *keeper_slave_conninfo;
 extern char	*keeper_after_command;
 
 /* Variables for cluster management */

@@ -27,6 +27,8 @@
 
 PG_MODULE_MAGIC;
 
+#define HEARTBEAT_SQL "SELECT 1"
+
 typedef enum KeeperMode
 {
 	KEEPER_MASTER_MODE,
@@ -39,8 +41,10 @@ const struct config_enum_entry mode_options[] = {
 	{NULL, 0, false}
 };
 
-void		_PG_init(void);
-void		KeeperMain(Datum);
+void	_PG_init(void);
+void	KeeperMain(Datum);
+bool	heartbeatServer(const char *conninfo, int r_count);
+bool	execSQL(const char *conninfo, const char *sql);
 
 /* Function for signal handler */
 static void pg_keeper_sigterm(SIGNAL_ARGS);
@@ -175,6 +179,17 @@ _PG_init(void)
 							   NULL,
 							   NULL);
 
+	DefineCustomStringVariable("pg_keeper.slave_conninfo",
+							   "Connection information for slave server",
+							   NULL,
+							   &keeper_slave_conninfo,
+							   NULL,
+							   PGC_POSTMASTER,
+							   0,
+							   NULL,
+							   NULL,
+							   NULL);
+
 	DefineCustomStringVariable("pg_keeper.after_command",
 							   "Shell command that will be called after promoted",
 							   NULL,
@@ -199,4 +214,61 @@ _PG_init(void)
 	snprintf(worker.bgw_name, BGW_MAXLEN, "pg_keeper");
 	worker.bgw_main_arg = Int32GetDatum(1);
 	RegisterBackgroundWorker(&worker);
+}
+
+
+/*
+ * headbeatServer()
+ *
+ * This fucntion does heatbeating to given server using HEARTBEAT_SQL.
+ * If could not establish connection to server or server didn't reaction,
+ * emits log message and return false.
+ */
+bool
+heartbeatServer(const char *conninfo, int r_count)
+{
+	if (!(execSQL(conninfo, HEARTBEAT_SQL)))
+	{
+		ereport(LOG,
+				(errmsg("%d time(s) failed", r_count)));
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * Simple function to execute one SQL.
+ */
+bool
+execSQL(const char *conninfo, const char *sql)
+{
+	PGconn		*con;
+	PGresult 	*res;
+
+	/* Try to connect to primary server */
+	if ((con = PQconnectdb(conninfo)) == NULL)
+	{
+		ereport(LOG,
+				(errmsg("Could not establish conenction to primary server")));
+
+		PQfinish(con);
+		return false;
+	}
+
+	res = PQexec(con, sql);
+
+	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+	{
+		/* Failed to ping to master server, report the number of retrying */
+		ereport(LOG,
+				(errmsg("could not get tuple from primary server")));
+
+		PQfinish(con);
+		return false;
+	}
+
+	/* Primary server is alive now */
+	PQfinish(con);
+	return true;
 }
