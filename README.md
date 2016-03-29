@@ -8,7 +8,8 @@ pg_keeper requires a master and hot standby servers in PostgreSQL 9.3 or later, 
 pg_keeper requires to have already the replication in place.
 
 ## Overview
-pg_keeper runs both master and standby server as two modes; master mode and standby mode.
+pg_keeper runs on both master and standby server as two modes; master mode and standby mode.
+The pg_keeper mode is determined automatially by itself.
 
 - master mode
 
