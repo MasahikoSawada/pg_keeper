@@ -19,7 +19,8 @@ If pg_keeper fails to get any result after a certain number of tries, pg_keeper 
 - standby mode
 
 standby mode of pg_keeper queries the primary server at fixed intervals using a simple query 'SELECT 1'.
-If pg_keeper fails to get any result after a certain number of tries, pg_keeper will promote the standby it runs on to master, and then exits itself.
+If pg_keeper fails to get any result after a certain number of tries, pg_keeper will promote the standby it runs on to mastet.
+After promoting to master server, pg_keeper switches from standby mode to master mode automatically.
 
 With this, fail over time can be calculated with this formula.
 
@@ -28,13 +29,13 @@ With this, fail over time can be calculated with this formula.
 ```
 
 ## Paramters
-- pg_keeper.primary_conninfo(*)
+- pg_keeper.node1_conninfo(*)
 
-Specifies a connection string to be used for pg_keeper to connect to the master - which should be the same as the master server specified in recovery.conf.
+Specifies a connection string to be used for pg_keeper to connect to the first master - which should be the same as the master server specified in recovery.conf.
 
-- pg_keeper.slave_conninfo(*)
+- pg_keeper.node2_conninfo(*)
 
-Specifies a connection string to be used for pg_keeper to connect to the standby.
+Specifies a connection string to be used for pg_keeper to connect to the first standby.
 
 - pg_keeper.keepalive_time (sec)
 
@@ -68,6 +69,6 @@ $ vi postgresql.conf
 shared_preload_libraries = 'pg_keeper'
 pg_keeper.keepalive_time = 5
 pg_keeper.keepalive_count = 3
-pg_keeper.primary_conninfo = 'host=192.168.100.100 port=5432 dbname=postgres'
-pg_keeper.standby_conninfo = 'host=192.168.100.200 port=5342 dbname=postgres'
+pg_keeper.node1_conninfo = 'host=192.168.100.100 port=5432 dbname=postgres'
+pg_keeper.node2_conninfo = 'host=192.168.100.200 port=5342 dbname=postgres'
 ```

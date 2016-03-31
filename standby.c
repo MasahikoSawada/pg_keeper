@@ -122,7 +122,6 @@ KeeperMainStandby(void)
 			if (keeper_after_command)
 				doAfterCommand();
 
-			/* XXX : Could we change to master_mode instead of exit? */
 			return true;
 		}
 	}

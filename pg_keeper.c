@@ -201,7 +201,7 @@ KeeperMain(Datum main_arg)
 	KeeperMaster = keeper_node1_conninfo;
 	KeeperStandby = keeper_node2_conninfo;
 
-	/* Determine keeper mode */
+	/* Determine keeper mode of itself */
 	current_mode = RecoveryInProgress() ? KEEPER_STANDBY_MODE : KEEPER_MASTER_MODE;
 
 	/* Establish signal handlers before unblocking signals */
@@ -314,6 +314,7 @@ execSQL(const char *conninfo, const char *sql)
 	return true;
 }
 
+/* Check the mandatory parameteres */
 static void
 checkParameter()
 {

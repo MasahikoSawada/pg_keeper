@@ -32,7 +32,7 @@
 
 
 #define ALTER_SYSTEM_COMMAND "ALTER SYSTEM SET synchronous_standby_names TO '';"
-#define STAT_REPLICATION_COMMAND "SELECT * FROM pg_stat_replication;"
+#define STAT_REPLICATION_COMMAND "SELECT * FROM pg_stat_replication WHERE sync_state = 'sync';"
 
 bool	KeeperMainMaster(void);
 void	setupKeeperMaster(void);
@@ -100,8 +100,8 @@ KeeperMainMaster(void)
 		}
 
 		/*
-		 * We get started pooling to standby server after
-		 * a standby server connected to master server.
+		 * We get started pooling to synchronous standby server
+		 * after a standby server connected to master server.
 		 */
 		if (!standby_connected)
 		{
@@ -111,6 +111,7 @@ KeeperMainMaster(void)
 			if (standby_connected)
 			{
 				set_ps_display("(master mode:connected)", false);
+				elog(LOG, "pg_keeper connects to standby server");
 				retry_count = 0;
 			}
 		}
@@ -133,9 +134,13 @@ KeeperMainMaster(void)
 			if (retry_count >= keeper_keepalives_count)
 			{
 				changeToAsync();
+
+				/*
+				 * After changing to asynchronou replication, reset
+				 * state of itself and restart pooling.
+				 */
+				set_ps_display("(master mode)", false);
 				standby_connected = false;
-				break;
-				/* XXX : Can we avoid to exit process? */
 			}
 		}
 	}
@@ -167,7 +172,7 @@ changeToAsync(void)
 }
 
 /*
- * Check if any standby server has conncted to master server
+ * Check if synchronous ustandby server has conncted to master server
  * through checking pg_stat_replication system view via SPI.
  */
 static bool
