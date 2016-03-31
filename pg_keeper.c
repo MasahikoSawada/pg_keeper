@@ -47,6 +47,7 @@ bool	heartbeatServer(const char *conninfo, int r_count);
 bool	execSQL(const char *conninfo, const char *sql);
 
 static void checkParameter(void);
+static void swtichMasterAndStandby(void);
 
 /* Function for signal handler */
 static void pg_keeper_sigterm(SIGNAL_ARGS);
@@ -234,19 +235,17 @@ exec:
 		 */
 		if (ret)
 		{
-			char *tmp;
-
 			/* Change mode to master mode */
 			current_mode = KEEPER_MASTER_MODE;
 
 			/* Switch master and standby connection information */
-			tmp = KeeperMaster;
-			KeeperMaster= KeeperStandby;
-			KeeperStandby = tmp;
+			swtichMasterAndStandby();
 
 			ereport(LOG,
-					(errmsg("\"%s\" is regarded as master server, \"%s\" is regarded as standby server",
-							KeeperMaster, KeeperStandby)));
+					(errmsg("swtiched master and standby informations"),
+					 errdetail("\"%s\" is regarded as master server, \"%s\" is regarded as standby server",
+							   KeeperMaster, KeeperStandby)));
+
 			goto exec;
 		}
 	}
@@ -269,7 +268,7 @@ heartbeatServer(const char *conninfo, int r_count)
 	if (!(execSQL(conninfo, HEARTBEAT_SQL)))
 	{
 		ereport(LOG,
-				(errmsg("pg_keeper failed to execute %d time(s)", r_count + 1)));
+				(errmsg("pg_keeper failed to execute pooling %d time(s)", r_count + 1)));
 		return false;
 	}
 
@@ -323,4 +322,15 @@ checkParameter()
 
 	if (keeper_node2_conninfo == NULL || keeper_node2_conninfo[0] == '\0')
 		elog(ERROR, "pg_keeper.node2_conninfo must be specified.");
+}
+
+/* Switch connection information between master and standby */
+static void
+swtichMasterAndStandby()
+{
+	char *tmp;
+
+	tmp = KeeperMaster;
+	KeeperMaster = KeeperStandby;
+	KeeperStandby = tmp;
 }
