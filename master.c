@@ -1,8 +1,8 @@
 /* -------------------------------------------------------------------------
  *
- * standby.c
+ * master.c
  *
- * pg_keeper process standby mode.
+ * master mode for pg_keeper.
  *
  * -------------------------------------------------------------------------
  */
@@ -119,7 +119,7 @@ KeeperMainMaster(void)
 		{
 			/*
 			 * Pooling to standby server. If heartbeat is failed,
-			 * increment retry_count..
+			 * increment retry_count.
 			 */
 			if (!heartbeatServer(KeeperStandby, retry_count))
 				retry_count++;
@@ -158,7 +158,7 @@ changeToAsync(void)
 {
 	int ret;
 
-	elog(LOG, "change to asynchronous replication");
+	elog(LOG, "pg_keeper changes replication mode to asynchronous replication");
 
 	/* Attempt to execute ALTER SYSTEM command */
 	if (!execSQL(KeeperMaster, ALTER_SYSTEM_COMMAND))
