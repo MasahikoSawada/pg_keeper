@@ -31,6 +31,8 @@ With this, fail over time can be calculated with this formula.
 ```
 
 ## GUC paramters
+Note that the paramteres with (*) are mandatory options.
+
 - pg_keeper.node1_conninfo(*)
 
   - Specifies a connection string to be used for pg_keeper to connect to the first master - which is used by standby mode server.
@@ -50,9 +52,7 @@ With this, fail over time can be calculated with this formula.
 
 - pg_keeper.after_command
 
-Specifies shell command that will be called after promoted.
-
-Note that the paramteres with (*) are mandatory options.
+  - Specifies shell command that will be called after promoted.
 
 ## Tested platforms
 pg_keeper has been built and tested on following platforms:
