@@ -3,6 +3,8 @@ pg_keeper
 
 pg_keeper is a simplified clustering module for PostgreSQL, to promote a standby server to master in a 2 servers cluster.
 
+The lisence of pg_keeper is [PostgreSQL Lisence](https://opensource.org/licenses/postgresql). (same as BSD Lisence)
+
 ## Prerequisite
 pg_keeper requires a master and hot standby servers in PostgreSQL 9.3 or later, on a Linux OS.
 pg_keeper requires to have already the replication in place.
@@ -51,6 +53,18 @@ With this, fail over time can be calculated with this formula.
 Specifies shell command that will be called after promoted.
 
 Note that the paramteres with (*) are mandatory options.
+
+## Tested platforms
+pg_keeper has been built and tested on following platforms:
+
+| Category | Module Name |
+|:--------:|:-----------:|
+|OS|CentOS 6.5|
+|PostgreSQL|9.5, 9.6beta2|
+
+pg_keeper probably can work with PostgreSQL 9.3 or later, but not tested yet.
+
+Reporting of building or testing pg_keeper on some platforms are very welcome.
 
 ## How to set up pg_keeper
 
