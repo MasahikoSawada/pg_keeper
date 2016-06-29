@@ -75,3 +75,22 @@ pg_keeper.keepalive_count = 3
 pg_keeper.node1_conninfo = 'host=pgserver1 port=5432 dbname=postgres'
 pg_keeper.node2_conninfo = 'host=pgserver2 port=5432 dbname=postgres'
 ```
+### Starting servers
+We should start master server first that pg_keeper is installed in. master server's pg_keeper process will be launched when master server got started, once pg_keeper in standby server connected master's pg_keeper process it will start to work.
+
+### Uninstallation
++ Following commands need to be executed in both master server and standby server.
+
+```
+$ cd pg_keeper
+$ make USE_PGXS=1
+$ su
+# make USE_PGXS=1 uninstall
+```
+
++ Remove `pg_keeper` from shared_preload_libraries in postgresql.conf on both servers.
+
+```
+$ vi postgresql.conf
+shared_preload_libraries = ''
+```
