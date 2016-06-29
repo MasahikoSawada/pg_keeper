@@ -28,32 +28,34 @@ With this, fail over time can be calculated with this formula.
 (F/O time) = pg_keeper.keepalives_time * pg_keeper.keepalives_count
 ```
 
-## Paramters
+## GUC paramters
 - pg_keeper.node1_conninfo(*)
 
-Specifies a connection string to be used for pg_keeper to connect to the first master - which should be the same as the master server specified in recovery.conf.
+  - Specifies a connection string to be used for pg_keeper to connect to the first master - which is used by standby mode server.
+  - It should be the same as the primary_conninfo in recovery.conf on first standby server.
 
 - pg_keeper.node2_conninfo(*)
 
-Specifies a connection string to be used for pg_keeper to connect to the first standby.
+  - Specifies a connection string to be used for pg_keeper to connect to the first standby- which is used by master mode server.
 
 - pg_keeper.keepalive_time (sec)
 
-Specifies how long interval pg_keeper continues polling.
-Deafult value is 5 secound.
+  - Specifies how long interval pg_keeper continues polling. 5 second by default.
 
 - pg_keeper.keepalive_count
 
-Specifies how many times pg_keeper try polling to master server in ordre to promote standby server.
-Default value is 1 times.
+  - Specifies how many times pg_keeper try polling to master server in ordre to promote standby server. 1 time by default.
 
 - pg_keeper.after_command
 
 Specifies shell command that will be called after promoted.
 
-Note that the paramteres with '*' are mandatory options.
+Note that the paramteres with (*) are mandatory options.
 
-## How to install pg_keeper
+## How to set up pg_keeper
+
+### Installation
+pg_keeper needs to be installed into both master server and standby server.
 
 ```
 $ cd pg_keeper
@@ -62,13 +64,14 @@ $ su
 # make USE_PGXS=1 install
 ```
 
-## How to set up pg_keeper
+### Configration
+For example, we set up two servers; pgserver1 and pgserver2. pgserver1 is the first master server and pgserver2 is the first standby server. We need to install pg_keeper in both servers and configure some parameters as follows.
 
 ```
 $ vi postgresql.conf
 shared_preload_libraries = 'pg_keeper'
 pg_keeper.keepalive_time = 5
 pg_keeper.keepalive_count = 3
-pg_keeper.node1_conninfo = 'host=192.168.100.100 port=5432 dbname=postgres'
-pg_keeper.node2_conninfo = 'host=192.168.100.200 port=5342 dbname=postgres'
+pg_keeper.node1_conninfo = 'host=pgserver1 port=5432 dbname=postgres'
+pg_keeper.node2_conninfo = 'host=pgserver2 port=5432 dbname=postgres'
 ```
