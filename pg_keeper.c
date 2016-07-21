@@ -256,9 +256,9 @@ exec:
 }
 
 /*
- * headbeatServer()
+ * heartbeatServer()
  *
- * This fucntion does heatbeating to given server using HEARTBEAT_SQL.
+ * This fucntion does heartbeating to given server using HEARTBEAT_SQL.
  * If could not establish connection to server or server didn't reaction,
  * emits log message and return false.
  */
