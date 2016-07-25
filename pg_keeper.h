@@ -20,12 +20,6 @@
 #include "tcop/utility.h"
 #include "libpq-int.h"
 
-typedef struct worktable
-{
-	const char *schema;
-	const char *name;
-} worktable;
-
 /* pg_keeper.c */
 extern void	_PG_init(void);
 extern void	KeeperMain(Datum);
