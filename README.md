@@ -3,6 +3,8 @@ pg_keeper
 
 pg_keeper is a simplified clustering module for PostgreSQL, to promote a standby server to master in a 2 servers cluster.
 
+The lisence of pg_keeper is [PostgreSQL Lisence](https://opensource.org/licenses/postgresql). (same as BSD Lisence)
+
 ## Prerequisite
 pg_keeper requires a master and hot standby servers in PostgreSQL 9.3 or later, on a Linux OS.
 pg_keeper requires to have already the replication in place.
@@ -28,32 +30,46 @@ With this, fail over time can be calculated with this formula.
 (F/O time) = pg_keeper.keepalives_time * pg_keeper.keepalives_count
 ```
 
-## Paramters
+## GUC paramters
+Note that the paramteres with (*) are mandatory options.
+
 - pg_keeper.node1_conninfo(*)
 
-Specifies a connection string to be used for pg_keeper to connect to the first master - which should be the same as the master server specified in recovery.conf.
+  - Specifies a connection string to be used for pg_keeper to connect to the first master - which is used by standby mode server.
+  - It should be the same as the primary_conninfo in recovery.conf on first standby server.
 
 - pg_keeper.node2_conninfo(*)
 
-Specifies a connection string to be used for pg_keeper to connect to the first standby.
+  - Specifies a connection string to be used for pg_keeper to connect to the first standby- which is used by master mode server.
 
 - pg_keeper.keepalive_time (sec)
 
-Specifies how long interval pg_keeper continues polling.
-Deafult value is 5 secound.
+  - Specifies how long interval pg_keeper continues polling. 5 second by default.
 
 - pg_keeper.keepalive_count
 
-Specifies how many times pg_keeper try polling to master server in ordre to promote standby server.
-Default value is 1 times.
+  - Specifies how many times pg_keeper try polling to master server in ordre to promote standby server. 1 time by default.
 
 - pg_keeper.after_command
 
-Specifies shell command that will be called after promoted.
+  - Specifies shell command that will be called after promoted.
 
-Note that the paramteres with '*' are mandatory options.
+## Tested platforms
+pg_keeper has been built and tested on following platforms:
 
-## How to install pg_keeper
+| Category | Module Name |
+|:--------:|:-----------:|
+|OS|CentOS 6.5|
+|PostgreSQL|9.5, 9.6beta2|
+
+pg_keeper probably can work with PostgreSQL 9.3 or later, but not tested yet.
+
+Reporting of building or testing pg_keeper on some platforms are very welcome.
+
+## How to set up pg_keeper
+
+### Installation
+pg_keeper needs to be installed into both master server and standby server.
 
 ```
 $ cd pg_keeper
@@ -62,13 +78,33 @@ $ su
 # make USE_PGXS=1 install
 ```
 
-## How to set up pg_keeper
+### Configration
+For example, we set up two servers; pgserver1 and pgserver2. pgserver1 is the first master server and pgserver2 is the first standby server. We need to install pg_keeper in both servers and configure some parameters as follows.
 
 ```
 $ vi postgresql.conf
 shared_preload_libraries = 'pg_keeper'
 pg_keeper.keepalive_time = 5
 pg_keeper.keepalive_count = 3
-pg_keeper.node1_conninfo = 'host=192.168.100.100 port=5432 dbname=postgres'
-pg_keeper.node2_conninfo = 'host=192.168.100.200 port=5342 dbname=postgres'
+pg_keeper.node1_conninfo = 'host=pgserver1 port=5432 dbname=postgres'
+pg_keeper.node2_conninfo = 'host=pgserver2 port=5432 dbname=postgres'
+```
+### Starting servers
+We should start master server first that pg_keeper is installed in. master server's pg_keeper process will be launched when master server got started, once pg_keeper in standby server connected master's pg_keeper process it will start to work.
+
+### Uninstallation
++ Following commands need to be executed in both master server and standby server.
+
+```
+$ cd pg_keeper
+$ make USE_PGXS=1
+$ su
+# make USE_PGXS=1 uninstall
+```
+
++ Remove `pg_keeper` from shared_preload_libraries in postgresql.conf on both servers.
+
+```
+$ vi postgresql.conf
+shared_preload_libraries = ''
 ```
