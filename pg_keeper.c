@@ -29,18 +29,6 @@ PG_MODULE_MAGIC;
 
 #define HEARTBEAT_SQL "SELECT 1"
 
-typedef enum KeeperMode
-{
-	KEEPER_MASTER_MODE,
-	KEEPER_STANDBY_MODE
-} KeeperMode;
-
-const struct config_enum_entry mode_options[] = {
-	{"master", KEEPER_MASTER_MODE, false},
-	{"standby", KEEPER_STANDBY_MODE, false},
-	{NULL, 0, false}
-};
-
 void	_PG_init(void);
 void	KeeperMain(Datum);
 bool	heartbeatServer(const char *conninfo, int r_count);
