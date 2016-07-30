@@ -20,6 +20,24 @@
 #include "tcop/utility.h"
 #include "libpq-int.h"
 
+typedef enum KeeperStatus
+{
+	KEEPER_STANDBY_READY = 0,
+	KEEPER_STANDBY_CONNECTED,
+	KEEPER_STANDBY_ALONE,
+	KEEPER_MASTER_READY,
+	KEEPER_MASTER_CONNECTED,
+	KEEPER_MASTER_ASYNC
+} KeeperStatus;
+
+typedef struct KeeperNode
+{
+	char *conninfo;
+	bool is_master;
+	bool is_next_master;
+	bool is_sync;
+} KeeperNode;
+
 /* pg_keeper.c */
 extern void	_PG_init(void);
 extern void	KeeperMain(Datum);
@@ -30,6 +48,7 @@ extern char *KeeperStandby;
 sig_atomic_t got_sighup;
 sig_atomic_t got_sigterm;
 
+extern char *getStatusPsString(KeeperStatus status);
 
 /* master.c */
 extern bool KeeperMainMaster(void);
@@ -47,4 +66,4 @@ extern char	*keeper_node2_conninfo;
 extern char *keeper_after_command;
 
 /* Variables for cluster management */
-extern int	current_mode;
+extern KeeperStatus	current_status;

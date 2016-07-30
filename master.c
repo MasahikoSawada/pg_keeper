@@ -59,7 +59,7 @@ setupKeeperMaster()
 	retry_count = 0;
 
 	/* Set process display which is exposed by ps command */
-	set_ps_display("(master mode)", false);
+	set_ps_display(getStatusPsString(current_status), false);
 
 	return;
 }
@@ -110,7 +110,8 @@ KeeperMainMaster(void)
 			/* Standby connected */
 			if (standby_connected)
 			{
-				set_ps_display("(master mode:connected)", false);
+				current_status = KEEPER_MASTER_CONNECTED;
+				set_ps_display(getStatusPsString(current_status), false);
 				elog(LOG, "pg_keeper connects to standby server");
 				retry_count = 0;
 			}
@@ -139,7 +140,8 @@ KeeperMainMaster(void)
 				 * After changing to asynchronou replication, reset
 				 * state of itself and restart pooling.
 				 */
-				set_ps_display("(master mode)", false);
+				current_status = KEEPER_MASTER_ASYNC;
+				set_ps_display(getStatusPsString(current_status), false);
 				standby_connected = false;
 			}
 		}

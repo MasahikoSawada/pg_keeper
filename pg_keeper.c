@@ -53,7 +53,7 @@ int	keeper_keepalives_count;
 char *KeeperMaster;
 char *KeeperStandby;
 
-int	current_mode;
+KeeperStatus current_status;
 
 /*
  * Entrypoint of this module.
@@ -190,7 +190,7 @@ KeeperMain(Datum main_arg)
 	KeeperStandby = keeper_node2_conninfo;
 
 	/* Determine keeper mode of itself */
-	current_mode = RecoveryInProgress() ? KEEPER_STANDBY_MODE : KEEPER_MASTER_MODE;
+	current_status = RecoveryInProgress() ? KEEPER_STANDBY_READY : KEEPER_MASTER_READY;
 
 	/* Establish signal handlers before unblocking signals */
 	pqsignal(SIGHUP, pg_keeper_sighup);
@@ -204,13 +204,13 @@ KeeperMain(Datum main_arg)
 
 exec:
 
-	if (current_mode == KEEPER_MASTER_MODE)
+	if (current_status == KEEPER_MASTER_READY)
 	{
 		/* Routine for master_mode */
 		setupKeeperMaster();
 		ret = KeeperMainMaster();
 	}
-	else if (current_mode == KEEPER_STANDBY_MODE)
+	else if (current_status == KEEPER_STANDBY_READY)
 	{
 		/* Routine for standby_mode */
 		setupKeeperStandby();
@@ -224,7 +224,7 @@ exec:
 		if (ret)
 		{
 			/* Change mode to master mode */
-			current_mode = KEEPER_MASTER_MODE;
+			current_status = KEEPER_MASTER_READY;
 
 			/* Switch master and standby connection information */
 			swtichMasterAndStandby();
@@ -238,7 +238,7 @@ exec:
 		}
 	}
 	else
-		ereport(ERROR, (errmsg("invalid keeper mode : \"%d\"", current_mode)));
+		ereport(ERROR, (errmsg("invalid keeper mode : \"%d\"", current_status)));
 
 	proc_exit(ret);
 }
@@ -322,4 +322,21 @@ swtichMasterAndStandby()
 	tmp = KeeperMaster;
 	KeeperMaster = KeeperStandby;
 	KeeperStandby = tmp;
+}
+
+char *
+getStatusPsString(KeeperStatus status)
+{
+	if (status == KEEPER_STANDBY_READY)
+		return "(standby:ready)";
+	else if (status == KEEPER_STANDBY_CONNECTED)
+		return "(standby:connected)";
+	else if (status == KEEPER_STANDBY_ALONE)
+		return "(standby:alone)";
+	else if (status == KEEPER_MASTER_READY)
+		return "(master:ready)";
+	else if (status == KEEPER_MASTER_CONNECTED)
+		return "(master:connected)";
+	else /* status == KEEPER_MASTER_ASYNC) */
+		return "(master:async)";
 }
