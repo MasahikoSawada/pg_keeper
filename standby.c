@@ -61,7 +61,8 @@ setupKeeperStandby()
 	PQfinish(con);
 
 	/* Set process display which is exposed by ps command */
-	set_ps_display("(standby mode:connected)", false);
+	current_status = KEEPER_STANDBY_CONNECTED;
+	set_ps_display(getStatusPsString(current_status), false);
 
 	return;
 }
