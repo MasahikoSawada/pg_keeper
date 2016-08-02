@@ -172,7 +172,7 @@ changeToAsync(void)
 }
 
 /*
- * Check if synchronous ustandby server has conncted to master server
+ * Check if synchronous standby server has conncted to master server
  * through checking pg_stat_replication system view via SPI.
  */
 static bool
