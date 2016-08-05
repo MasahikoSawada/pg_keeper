@@ -10,24 +10,35 @@
 #include "postgres.h"
 
 #include "pg_keeper.h"
+#include "util.h"
+#include "syncrep.h"
 
 /* These are always necessary for a bgworker */
 #include "access/xlog.h"
+#include "access/htup_details.h"
+#include "access/reloptions.h"
+#include "access/xact.h"
+#include "executor/spi.h"
 #include "miscadmin.h"
 #include "postmaster/bgworker.h"
+#include "replication/syncrep.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
 #include "storage/lwlock.h"
 #include "storage/proc.h"
 #include "storage/shmem.h"
+#include "utils/snapmgr.h"
+#include "utils/builtins.h"
+#include "utils/rel.h"
 
 /* these headers are used by this particular worker's code */
 #include "tcop/utility.h"
 #include "libpq-int.h"
 
 PG_MODULE_MAGIC;
-
-#define HEARTBEAT_SQL "SELECT 1"
+PG_FUNCTION_INFO_V1(add_node);
+PG_FUNCTION_INFO_V1(del_node);
+PG_FUNCTION_INFO_V1(del_node_by_seqno);
 
 void	_PG_init(void);
 void	KeeperMain(Datum);
@@ -37,13 +48,18 @@ bool	execSQL(const char *conninfo, const char *sql);
 static void checkParameter(void);
 static void swtichMasterAndStandby(void);
 
+static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
+static void pg_keeper_shmem_startup(void);
+
 /* Function for signal handler */
 static void pg_keeper_sigterm(SIGNAL_ARGS);
 static void pg_keeper_sighup(SIGNAL_ARGS);
+static void pg_keeper_sigusr1(SIGNAL_ARGS);
 
 /* flags set by signal handlers */
 sig_atomic_t got_sighup = false;
 sig_atomic_t got_sigterm = false;
+sig_atomic_t got_sigusr1 = false;
 
 /* GUC variables */
 int	keeper_keepalives_time;
@@ -53,8 +69,109 @@ int	keeper_keepalives_count;
 char *KeeperMaster;
 char *KeeperStandby;
 
+/* Global variables */
 KeeperStatus current_status;
+int *PgKeeperPid;
+KeeperNode *KeeperRepNodes;
+int nKeeperRepNodes;
 
+/*
+ * add_node()
+ *
+ * Add specified node into table.
+ */
+Datum
+add_node(PG_FUNCTION_ARGS)
+{
+	text *node_name = PG_GETARG_TEXT_P(0);
+	text *conninfo = PG_GETARG_TEXT_P(1);
+	char *standby_name;
+	bool is_sync = false;
+	bool is_master = false;
+	Relation rel;
+	TupleDesc tupdesc;
+	int i;
+	int num;
+
+	/* Check connection with conninfo */
+	if (!heartbeatServer(text_to_cstring(conninfo), 0))
+	{
+		ereport(WARNING, (errmsg("the server \"%s\", \"%s\" might not be available",
+								 text_to_cstring(conninfo), text_to_cstring(conninfo))));
+		PG_RETURN_BOOL(false);
+	}
+
+	parse_synchronous_standby_names();
+	rel = get_rel_from_relname(cstring_to_text(KEEPER_MANAGE_TABLE_NAME), AccessShareLock,
+							   ACL_SELECT);
+	tupdesc = rel->rd_att;
+	SetCurrentStatementStartTimestamp();
+	SPI_connect();
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	/* If no tuple exists, this node will be inserted as a master */
+	getAllRepNodes(&num, false);
+
+	/* First register node mast be master */
+	is_master = (num == 0);
+
+	/* Consider this node should be inserted as a sync node */
+	if (!is_master)
+	{
+		standby_name = RepConfig->member_names;
+		for (i = 0; i < RepConfig->nmembers; i++)
+		{
+			if (pg_strcasecmp(standby_name, text_to_cstring(node_name)) == 0)
+			{
+				is_sync = true;
+				break;
+			}
+			standby_name += strlen(standby_name) + 1;
+		}
+	}
+
+	/* insert node as master or standby*/
+	addNewNode(rel->rd_att, node_name, conninfo, is_master, false, is_sync);
+
+	/* Update next mater among with nodes */
+	updateNextMaster(rel->rd_att);
+
+	/* update next master info */
+	//CommitTransactionCommand();
+
+	SPI_finish();
+	PopActiveSnapshot();
+	relation_close(rel, AccessShareLock);
+
+	/* Inform keeper process to update its local cache */
+	kill(*PgKeeperPid, SIGUSR1);
+
+	PG_RETURN_BOOL(true);
+}
+
+Datum
+del_node(PG_FUNCTION_ARGS)
+{
+	//char *node_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+
+	/* remove all node named node_name */
+
+	/* update next master info */
+
+	PG_RETURN_BOOL(true);
+}
+
+Datum
+del_node_by_seqno(PG_FUNCTION_ARGS)
+{
+	//int no = PG_GETARG_INT32(0);
+
+	/* remove a 'no' number node */
+
+	/* update next master info */
+
+	PG_RETURN_BOOL(true);
+}
 /*
  * Entrypoint of this module.
  *
@@ -136,6 +253,11 @@ _PG_init(void)
 	worker.bgw_restart_time = BGW_NEVER_RESTART;
 	worker.bgw_main = KeeperMain;
 	worker.bgw_notify_pid = 0;
+
+	/* Install hooks */
+	prev_shmem_startup_hook = shmem_startup_hook;
+	shmem_startup_hook = pg_keeper_shmem_startup;
+
 	/*
 	 * Now fill in worker-specific data, and do the actual registrations.
 	 */
@@ -175,6 +297,39 @@ pg_keeper_sighup(SIGNAL_ARGS)
 }
 
 /*
+ * Singnal handler for SIGUSR1
+ *		Set a flag to let the main loop to update its local cache
+ */
+static void
+pg_keeper_sigusr1(SIGNAL_ARGS)
+{
+	got_sigusr1 = true;
+	if (MyProc)
+		SetLatch(&MyProc->procLatch);
+}
+
+/*
+ * Hook for shmem startup.
+ */
+static void
+pg_keeper_shmem_startup(void)
+{
+	bool found;
+	int shmem_size;
+
+	if (prev_shmem_startup_hook)
+		prev_shmem_startup_hook();
+
+	shmem_size = MAXALIGN(sizeof(int));
+
+	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
+	PgKeeperPid = ShmemInitStruct("pg_keeper",
+								  shmem_size,
+								  &found);
+	LWLockRelease(AddinShmemInitLock);
+}
+
+/*
  * Entry point for pg_keeper.
  */
 void
@@ -195,12 +350,19 @@ KeeperMain(Datum main_arg)
 	/* Establish signal handlers before unblocking signals */
 	pqsignal(SIGHUP, pg_keeper_sighup);
 	pqsignal(SIGTERM, pg_keeper_sigterm);
+	pqsignal(SIGUSR1, pg_keeper_sigusr1);
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
 
 	/* Connect to our database */
 	BackgroundWorkerInitializeConnection("postgres", NULL);
+
+	/* Register my processid to shmem */
+	*PgKeeperPid = MyProcPid;
+
+	/* Parse and fetch configuration for synchronous replication */
+	parse_synchronous_standby_names();
 
 exec:
 
@@ -255,7 +417,7 @@ heartbeatServer(const char *conninfo, int r_count)
 {
 	if (!(execSQL(conninfo, HEARTBEAT_SQL)))
 	{
-		ereport(LOG,
+		ereport(WARNING,
 				(errmsg("pg_keeper failed to execute pooling %d time(s)", r_count + 1)));
 		return false;
 	}

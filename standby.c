@@ -10,6 +10,7 @@
 #include "postgres.h"
 
 #include "pg_keeper.h"
+#include "syncrep.h"
 
 /* These are always necessary for a bgworker */
 #include "access/xlog.h"
@@ -25,8 +26,6 @@
 #include "tcop/utility.h"
 #include "libpq-int.h"
 #include "utils/ps_status.h"
-
-#define	HEARTBEAT_SQL "select 1;"
 
 bool	KeeperMainStandby(void);
 void	setupKeeperStandby(void);
@@ -100,6 +99,7 @@ KeeperMainStandby(void)
 		{
 			got_sighup = false;
 			ProcessConfigFile(PGC_SIGHUP);
+			parse_synchronous_standby_names();
 		}
 
 		/*

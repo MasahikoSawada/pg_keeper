@@ -20,6 +20,10 @@
 #include "tcop/utility.h"
 #include "libpq-int.h"
 
+#define KEEPER_MANAGE_TABLE_NAME "pgkeeper.node_info"
+#define KEEPER_NUM_ATTS 5 /* Except for seqno */
+#define HEARTBEAT_SQL "SELECT 1"
+
 typedef enum KeeperStatus
 {
 	KEEPER_STANDBY_READY = 0,
@@ -32,6 +36,8 @@ typedef enum KeeperStatus
 
 typedef struct KeeperNode
 {
+	int	seqno;
+	char *name;
 	char *conninfo;
 	bool is_master;
 	bool is_next_master;
@@ -45,8 +51,9 @@ extern bool	heartbeatServer(const char *conninfo, int r_count);
 extern bool execSQL(const char *conninfo, const char *sql);
 extern char *KeeperMaster;
 extern char *KeeperStandby;
-sig_atomic_t got_sighup;
-sig_atomic_t got_sigterm;
+extern sig_atomic_t got_sighup;
+extern sig_atomic_t got_sigterm;
+extern sig_atomic_t got_sigusr1;
 
 extern char *getStatusPsString(KeeperStatus status);
 
@@ -67,3 +74,5 @@ extern char *keeper_after_command;
 
 /* Variables for cluster management */
 extern KeeperStatus	current_status;
+extern KeeperNode *KeeperRepNodes;
+extern int nKeeperRepNodes;

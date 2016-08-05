@@ -1,7 +1,10 @@
 # pg_keeper/Makefile
 
 MODULE_big = pg_keeper
-OBJS = pg_keeper.o master.o standby.o
+OBJS = pg_keeper.o master.o standby.o util.o syncrep.o
+
+EXTENSION = pg_keeper
+DATA = pg_keeper--1.0.sql
 
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK = $(libpq)

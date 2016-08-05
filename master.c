@@ -10,9 +10,12 @@
 #include "postgres.h"
 
 #include "pg_keeper.h"
+#include "syncrep.h"
+#include "util.h"
 
 /* These are always necessary for a bgworker */
 #include "access/xlog.h"
+#include "commands/extension.h"
 #include "executor/spi.h"
 #include "miscadmin.h"
 #include "postmaster/bgworker.h"
@@ -30,7 +33,6 @@
 #include "utils/snapmgr.h"
 #include "utils/ps_status.h"
 
-
 #define ALTER_SYSTEM_COMMAND "ALTER SYSTEM SET synchronous_standby_names TO '';"
 #define STAT_REPLICATION_COMMAND "SELECT * FROM pg_stat_replication WHERE sync_state = 'sync';"
 
@@ -39,15 +41,14 @@ void	setupKeeperMaster(void);
 
 static void changeToAsync(void);
 static bool checkStandbyIsConnected(void);
+static void resetRetryCounts(void);
+static bool heartbeatServerMaster(int *r_counts);
 
 /* Variables for heartbeat */
-static int retry_count;
+static int *retry_counts;
 
 /* GUC variables */
 char	*keeper_node1_conninfo;
-
-/* Other variables */
-bool	standby_connected;
 
 /*
  * Set up several parameters for master mode.
@@ -55,9 +56,6 @@ bool	standby_connected;
 void
 setupKeeperMaster()
 {
-	/* Set up variable */
-	retry_count = 0;
-
 	/* Set process display which is exposed by ps command */
 	set_ps_display(getStatusPsString(current_status), false);
 
@@ -97,42 +95,52 @@ KeeperMainMaster(void)
 		{
 			got_sighup = false;
 			ProcessConfigFile(PGC_SIGHUP);
+			parse_synchronous_standby_names();
+		}
+
+		if (got_sigusr1)
+		{
+			got_sigusr1 = false;
+			pg_usleep(1 * 1000L * 1000L);
+
+			/* Update own memory */
+			updateLocalCache();
+
+			/* Update retry_counts information */
+			resetRetryCounts();
+
+			elog(LOG, "pg_keeper update own cache, currently number of nodes is %d",
+				 nKeeperRepNodes);
 		}
 
 		/*
 		 * We get started pooling to synchronous standby server
 		 * after a standby server connected to master server.
 		 */
-		if (!standby_connected)
+		if (current_status == KEEPER_MASTER_READY)
 		{
-			standby_connected = checkStandbyIsConnected();
+			int num = 0;
+
+			getAllRepNodes(&num, true);
 
 			/* Standby connected */
-			if (standby_connected)
+			if (num > 1)
 			{
 				current_status = KEEPER_MASTER_CONNECTED;
 				set_ps_display(getStatusPsString(current_status), false);
 				elog(LOG, "pg_keeper connects to standby server");
-				retry_count = 0;
+				resetRetryCounts();
 			}
 		}
-		else
+		else if (current_status == KEEPER_MASTER_CONNECTED)
 		{
 			/*
-			 * Pooling to standby server. If heartbeat is failed,
-			 * increment retry_count.
+			 * Pooling to standby servers. If we could not pool to standby enough
+			 * to continue synchronous replication at more than keeper_keepalive_count
+			 * counts *in a row*, then change to asynchronous replication using
+			 * ALTER SYSTEM.
 			 */
-			if (!heartbeatServer(KeeperStandby, retry_count))
-				retry_count++;
-			else
-				retry_count = 0; /* reset count */
-
-			/*
-			 * Change to asynchronous replication using ALTER SYSTEM
-			 * command iff master server could not connect to standby server
-			 * more than keeper_keepalives_count counts *in a row*.
-			 */
-			if (retry_count >= keeper_keepalives_count)
+			if (!heartbeatServerMaster(retry_counts))
 			{
 				changeToAsync();
 
@@ -142,12 +150,86 @@ KeeperMainMaster(void)
 				 */
 				current_status = KEEPER_MASTER_ASYNC;
 				set_ps_display(getStatusPsString(current_status), false);
-				standby_connected = false;
+				resetRetryCounts();
+
+				/* XXX : Should we change all is_sync on management table to false? */
 			}
+		}
+		else if (current_status == KEEPER_MASTER_ASYNC)
+		{
+			/* XXX : Should we continue to pool the all standbys? */
 		}
 	}
 
 	return true;
+}
+
+/*
+ * heartbeatServerMaster()
+ * Pooling to standby servers. Return false iif we could not pool the standbys enough
+ * to continue synchronous replication at more than keeper_keepalive_count *in a row*.
+ */
+static bool
+heartbeatServerMaster(int *r_counts)
+{
+	int connect_sync = 0;
+	int registered_sync = 0;
+	int i;
+	bool connect_enough = true;
+	bool retry_count_reached = false;
+
+	/* Pooling to all nodes listed on KeeperRepNodes */
+	for (i = 0; i < nKeeperRepNodes; i++)
+	{
+		KeeperNode *node = &(KeeperRepNodes[i]);
+		char *connstr = node->conninfo;
+
+		/* Not interested in master server */
+		if (node->is_master)
+			continue;
+
+		/* Not insterested in async standby server as well */
+		if (!node->is_sync)
+			continue;
+
+		/* Count registred sync node */
+		registered_sync++;
+
+		if (!(execSQL(connstr, HEARTBEAT_SQL)))
+		{
+			(r_counts[i])++;
+			ereport(LOG,
+					(errmsg("pg_keeper failed to execute pooling %d time(s)", r_counts[i] + 1)));
+
+			/* Check if we could not connect to "sync" standby */
+			if (r_counts[i] > keeper_keepalives_count)
+				retry_count_reached = true;
+
+			continue;
+		}
+
+		/* Success polling, reset retry_counts */
+		r_counts[i] = 0;
+
+		/* Keep track of the number of sync standby */
+		if (node->is_sync)
+			connect_sync++;
+	}
+
+	/*
+	 * Set the connect_enough false only if the number of registered node is more
+	 * than sync standbys required sync replication, but the number connecting
+	 * standby is not enough.
+	 */
+	if (registered_sync >= RepConfig->num_sync &&
+		connect_sync < RepConfig->num_sync &&
+		retry_count_reached)
+		connect_enough = false;
+
+	elog(NOTICE, "total %d, registerd_sync %d, connect_sync %d, required_sync %d, connect_enough %d",
+		 nKeeperRepNodes, registered_sync, connect_sync, RepConfig->num_sync, connect_enough);
+
+	return connect_enough;
 }
 
 /*
@@ -201,4 +283,13 @@ checkStandbyIsConnected()
 	CommitTransactionCommand();
 
 	return found;
+}
+
+static void
+resetRetryCounts(void)
+{
+	if (retry_counts)
+		pfree(retry_counts);
+
+	retry_counts = palloc0(sizeof(int) * nKeeperRepNodes);
 }
