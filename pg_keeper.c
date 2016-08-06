@@ -64,6 +64,7 @@ sig_atomic_t got_sigusr1 = false;
 /* GUC variables */
 int	keeper_keepalives_time;
 int	keeper_keepalives_count;
+char *keeper_node_name;
 
 /* Pointer to master/standby server connection infromation */
 char *KeeperMaster;
@@ -239,6 +240,17 @@ _PG_init(void)
 							   "Shell command that will be called after promoted",
 							   NULL,
 							   &keeper_after_command,
+							   NULL,
+							   PGC_SIGHUP,
+							   GUC_NOT_IN_SAMPLE,
+							   NULL,
+							   NULL,
+							   NULL);
+
+	DefineCustomStringVariable("pg_keeper.node_name",
+							   "Node name used clustering management",
+							   NULL,
+							   &keeper_node_name,
 							   NULL,
 							   PGC_SIGHUP,
 							   GUC_NOT_IN_SAMPLE,

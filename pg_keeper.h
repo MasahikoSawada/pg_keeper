@@ -71,6 +71,7 @@ extern int	keeper_keepalives_count;
 extern char *keeper_node1_conninfo;
 extern char	*keeper_node2_conninfo;
 extern char *keeper_after_command;
+extern char *keeper_node_name;
 
 /* Variables for cluster management */
 extern KeeperStatus	current_status;
