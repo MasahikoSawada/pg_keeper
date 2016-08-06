@@ -68,8 +68,6 @@ extern void setupKeeperStandby(void);
 /* GUC variables */
 extern int	keeper_keepalives_time;
 extern int	keeper_keepalives_count;
-extern char *keeper_node1_conninfo;
-extern char	*keeper_node2_conninfo;
 extern char *keeper_after_command;
 extern char *keeper_node_name;
 

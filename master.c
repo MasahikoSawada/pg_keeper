@@ -47,9 +47,6 @@ static bool heartbeatServerMaster(int *r_counts);
 /* Variables for heartbeat */
 static int *retry_counts;
 
-/* GUC variables */
-char	*keeper_node1_conninfo;
-
 /*
  * Set up several parameters for master mode.
  */

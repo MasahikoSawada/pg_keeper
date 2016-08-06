@@ -214,28 +214,6 @@ _PG_init(void)
 							NULL,
 							NULL);
 
-	DefineCustomStringVariable("pg_keeper.node1_conninfo",
-							   "Connection information for node1 server (first master server)",
-							   NULL,
-							   &keeper_node1_conninfo,
-							   NULL,
-							   PGC_POSTMASTER,
-							   0,
-							   NULL,
-							   NULL,
-							   NULL);
-
-	DefineCustomStringVariable("pg_keeper.node2_conninfo",
-							   "Connection information for node2 server (first standby server)",
-							   NULL,
-							   &keeper_node2_conninfo,
-							   NULL,
-							   PGC_POSTMASTER,
-							   0,
-							   NULL,
-							   NULL,
-							   NULL);
-
 	DefineCustomStringVariable("pg_keeper.after_command",
 							   "Shell command that will be called after promoted",
 							   NULL,
@@ -351,10 +329,6 @@ KeeperMain(Datum main_arg)
 
 	/* Sanity check */
 	checkParameter();
-
-	/* Initial setting */
-	KeeperMaster = keeper_node1_conninfo;
-	KeeperStandby = keeper_node2_conninfo;
 
 	/* Determine keeper mode of itself */
 	current_status = RecoveryInProgress() ? KEEPER_STANDBY_READY : KEEPER_MASTER_READY;
@@ -480,11 +454,8 @@ execSQL(const char *conninfo, const char *sql)
 static void
 checkParameter()
 {
-	if (keeper_node1_conninfo == NULL || keeper_node1_conninfo[0] == '\0')
-		elog(ERROR, "pg_keeper.node1_conninfo must be specified.");
-
-	if (keeper_node2_conninfo == NULL || keeper_node2_conninfo[0] == '\0')
-		elog(ERROR, "pg_keeper.node2_conninfo must be specified.");
+	if (keeper_node_name == NULL || keeper_node_name[0] == '\0')
+		elog(ERROR, "pg_keeper.node_name must be specified.");
 }
 
 /* Switch connection information between master and standby */

@@ -34,7 +34,6 @@ static void doPromote(void);
 static void doAfterCommand(void);
 
 /* GUC variables */
-char	*keeper_node2_conninfo;
 char	*keeper_after_command;
 
 /* Variables for heartbeat */
