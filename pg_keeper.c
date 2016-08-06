@@ -39,14 +39,13 @@ PG_MODULE_MAGIC;
 PG_FUNCTION_INFO_V1(add_node);
 PG_FUNCTION_INFO_V1(del_node);
 PG_FUNCTION_INFO_V1(del_node_by_seqno);
+PG_FUNCTION_INFO_V1(indirect_polling);
+PG_FUNCTION_INFO_V1(indirect_kill);
 
 void	_PG_init(void);
 void	KeeperMain(Datum);
-bool	heartbeatServer(const char *conninfo, int r_count);
-bool	execSQL(const char *conninfo, const char *sql);
 
 static void checkParameter(void);
-static void swtichMasterAndStandby(void);
 
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static void pg_keeper_shmem_startup(void);
@@ -66,15 +65,11 @@ int	keeper_keepalives_time;
 int	keeper_keepalives_count;
 char *keeper_node_name;
 
-/* Pointer to master/standby server connection infromation */
-char *KeeperMaster;
-char *KeeperStandby;
-
 /* Global variables */
 KeeperStatus current_status;
-int *PgKeeperPid;
-KeeperNode *KeeperRepNodes;
-int nKeeperRepNodes;
+int 		*PgKeeperPid;
+KeeperNode 	*KeeperRepNodes;
+int 		nKeeperRepNodes;
 
 /*
  * add_node()
@@ -95,7 +90,7 @@ add_node(PG_FUNCTION_ARGS)
 	int num;
 
 	/* Check connection with conninfo */
-	if (!heartbeatServer(text_to_cstring(conninfo), 0))
+	if (!heartbeatServer(text_to_cstring(conninfo)))
 	{
 		ereport(WARNING, (errmsg("the server \"%s\", \"%s\" might not be available",
 								 text_to_cstring(conninfo), text_to_cstring(conninfo))));
@@ -150,29 +145,90 @@ add_node(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(true);
 }
 
+/*
+ * Delete node by node name.
+ */
 Datum
 del_node(PG_FUNCTION_ARGS)
 {
-	//char *node_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	char *node_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	bool ret;
 
-	/* remove all node named node_name */
+	SetCurrentStatementStartTimestamp();
+	SPI_connect();
+	PushActiveSnapshot(GetTransactionSnapshot());
 
-	/* update next master info */
+	ret = deleteNodeByName(node_name);
 
-	PG_RETURN_BOOL(true);
+	SPI_finish();
+	PopActiveSnapshot();
+
+	/* Inform keeper process to update its local cache */
+	kill(*PgKeeperPid, SIGUSR1);
+
+	PG_RETURN_BOOL(ret);
 }
 
+/*
+ * Delete node by seqno.
+ */
 Datum
 del_node_by_seqno(PG_FUNCTION_ARGS)
 {
-	//int no = PG_GETARG_INT32(0);
+	int seqno = PG_GETARG_INT32(0);
+	bool ret;
 
-	/* remove a 'no' number node */
+	SetCurrentStatementStartTimestamp();
+	SPI_connect();
+	PushActiveSnapshot(GetTransactionSnapshot());
 
-	/* update next master info */
+	ret = deleteNodeBySeqno(seqno);
+
+	SPI_finish();
+	PopActiveSnapshot();
+
+	/* Inform keeper process to update its local cache */
+	kill(*PgKeeperPid, SIGUSR1);
+
+	PG_RETURN_BOOL(ret);
+}
+
+/*
+ * Polling given server used for indirectly polling.
+ */
+Datum
+indirect_polling(PG_FUNCTION_ARGS)
+{
+	text *conninfo = PG_GETARG_TEXT_PP(0);
+	bool ret;
+
+	ret = heartbeatServer(text_to_cstring(conninfo));
+
+	PG_RETURN_BOOL(ret);
+}
+
+/*
+ * Send SIGUSR1 signal to pg_keeper process.
+ */
+Datum
+indirect_kill(PG_FUNCTION_ARGS)
+{
+	char *signal = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	int pid = *PgKeeperPid;
+	int sig;
+
+	if (pg_strcasecmp(signal, "SIGUSR1") == 0)
+		sig = SIGUSR1;
+	else if (pg_strcasecmp(signal, "SIGUSR1") == 0)
+		sig = SIGUSR1;
+	else
+		ereport(ERROR, (errmsg("Invalid signal \"%s\"", signal)));
+
+	kill(pid, sig);
 
 	PG_RETURN_BOOL(true);
 }
+
 /*
  * Entrypoint of this module.
  *
@@ -351,7 +407,6 @@ KeeperMain(Datum main_arg)
 	parse_synchronous_standby_names();
 
 exec:
-
 	if (current_status == KEEPER_MASTER_READY)
 	{
 		/* Routine for master_mode */
@@ -360,6 +415,7 @@ exec:
 	}
 	else if (current_status == KEEPER_STANDBY_READY)
 	{
+
 		/* Routine for standby_mode */
 		setupKeeperStandby();
 		ret = KeeperMainStandby();
@@ -374,13 +430,9 @@ exec:
 			/* Change mode to master mode */
 			current_status = KEEPER_MASTER_READY;
 
-			/* Switch master and standby connection information */
-			swtichMasterAndStandby();
-
-			ereport(LOG,
-					(errmsg("swtiched master and standby informations"),
-					 errdetail("\"%s\" is regarded as master server, \"%s\" is regarded as standby server",
-							   KeeperMaster, KeeperStandby)));
+			/*
+			 * XXX : We should switch to master server correctly.
+			 */
 
 			goto exec;
 		}
@@ -399,14 +451,10 @@ exec:
  * emits log message and return false.
  */
 bool
-heartbeatServer(const char *conninfo, int r_count)
+heartbeatServer(const char *conninfo)
 {
-	if (!(execSQL(conninfo, HEARTBEAT_SQL)))
-	{
-		ereport(WARNING,
-				(errmsg("pg_keeper failed to execute pooling %d time(s)", r_count + 1)));
+	if (!(execSQL(conninfo, HEARTBEAT_SQL, NULL)))
 		return false;
-	}
 
 	return true;
 }
@@ -415,7 +463,7 @@ heartbeatServer(const char *conninfo, int r_count)
  * Simple function to execute one SQL.
  */
 bool
-execSQL(const char *conninfo, const char *sql)
+execSQL(const char *conninfo, const char *sql, bool *result)
 {
 	PGconn		*con;
 	PGresult 	*res;
@@ -432,6 +480,9 @@ execSQL(const char *conninfo, const char *sql)
 	}
 
 	res = PQexec(con, sql);
+
+	if (result != NULL)
+		*result = str_to_bool(PQgetvalue(res, 0, 0));
 
 	if (PQresultStatus(res) != PGRES_TUPLES_OK &&
 		PQresultStatus(res) != PGRES_COMMAND_OK)
@@ -458,30 +509,28 @@ checkParameter()
 		elog(ERROR, "pg_keeper.node_name must be specified.");
 }
 
-/* Switch connection information between master and standby */
-static void
-swtichMasterAndStandby()
-{
-	char *tmp;
-
-	tmp = KeeperMaster;
-	KeeperMaster = KeeperStandby;
-	KeeperStandby = tmp;
-}
-
+/*
+ * Return status string for process title.
+ */
 char *
-getStatusPsString(KeeperStatus status)
+getStatusPsString(KeeperStatus status, int num)
 {
+	StringInfoData str;
+
+	initStringInfo(&str);
+
 	if (status == KEEPER_STANDBY_READY)
 		return "(standby:ready)";
 	else if (status == KEEPER_STANDBY_CONNECTED)
-		return "(standby:connected)";
+		appendStringInfo(&str, "(standby:connected, %d)", num);
 	else if (status == KEEPER_STANDBY_ALONE)
-		return "(standby:alone)";
+		appendStringInfo(&str, "(standby:alone, %d)", num);
 	else if (status == KEEPER_MASTER_READY)
 		return "(master:ready)";
 	else if (status == KEEPER_MASTER_CONNECTED)
-		return "(master:connected)";
+		appendStringInfo(&str, "(master:connected, %d)", num);
 	else /* status == KEEPER_MASTER_ASYNC) */
-		return "(master:async)";
+		appendStringInfo(&str, "(master:async, %d)", num);
+
+	return str.data;
 }

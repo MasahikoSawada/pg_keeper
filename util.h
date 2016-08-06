@@ -21,8 +21,14 @@ extern Relation get_rel_from_relname(text *relname, LOCKMODE lockmode,
 									 AclMode aclmode);
 extern void addNewNode(TupleDesc tupdesc, text *node_name, text *conninfo,
 					   bool is_master, bool is_nextmaster, bool is_sync);
+extern bool deleteNodeBySeqno(int seqno);
+extern bool deleteNodeByName(const char *name);
 extern int decideNextMaster(TupleDesc tupdesc, SPITupleTable tuptable);
 extern SPITupleTable *getAllRepNodes(int *num, bool newtx);
-extern void spiSQLExec(const char *sql);
+extern bool spiSQLExec(const char *sql, bool newtx);
 extern void updateNextMaster(TupleDesc tupdesc);
-extern void updateLocalCache(void);
+extern void updateLocalCache(bool propagate);
+extern int *resetRetryCounts(int *retry_counts);
+extern bool isNextMaster(const char *name);
+extern bool str_to_bool(const char *string);
+extern bool checkExtensionInstalled(void);

@@ -40,22 +40,22 @@ typedef struct KeeperNode
 	char *name;
 	char *conninfo;
 	bool is_master;
-	bool is_next_master;
+	bool is_nextmaster;
 	bool is_sync;
 } KeeperNode;
 
 /* pg_keeper.c */
 extern void	_PG_init(void);
 extern void	KeeperMain(Datum);
-extern bool	heartbeatServer(const char *conninfo, int r_count);
-extern bool execSQL(const char *conninfo, const char *sql);
+extern bool	heartbeatServer(const char *conninfo);
+extern bool execSQL(const char *conninfo, const char *sql, bool *result);
 extern char *KeeperMaster;
 extern char *KeeperStandby;
 extern sig_atomic_t got_sighup;
 extern sig_atomic_t got_sigterm;
 extern sig_atomic_t got_sigusr1;
 
-extern char *getStatusPsString(KeeperStatus status);
+extern char *getStatusPsString(KeeperStatus status, int num);
 
 /* master.c */
 extern bool KeeperMainMaster(void);

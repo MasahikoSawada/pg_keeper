@@ -23,6 +23,7 @@
 #include "utils/snapmgr.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
+#include "utils/ps_status.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
@@ -32,17 +33,38 @@
 /*
  * Exec given SQL and handle the error.
  */
-void
-spiSQLExec(const char* sql)
+bool
+spiSQLExec(const char* sql, bool newtx)
 {
 	int ret;
+
+	if (newtx)
+	{
+		SetCurrentStatementStartTimestamp();
+		StartTransactionCommand();
+		SPI_connect();
+		PushActiveSnapshot(GetTransactionSnapshot());
+	}
 
 	ret = SPI_exec(sql, 0);
 
 	if (ret != SPI_OK_SELECT && ret != SPI_OK_UPDATE &&
 		ret != SPI_OK_INSERT && ret != SPI_OK_DELETE)
-		ereport(ERROR,
-				(errmsg("failed to execute CRUD to fetch node_info table.:\"%s\"", sql)));
+	{
+		ereport(WARNING,
+				(errmsg("failed to execute CRUD to fetch node_info table, status %d :\"%s\"",
+						ret, sql)));
+		return false;
+	}
+
+	if (newtx)
+	{
+		SPI_finish();
+		PopActiveSnapshot();
+		CommitTransactionCommand();
+	}
+
+	return true;
 }
 
 /*
@@ -95,7 +117,7 @@ updateNextMaster(TupleDesc tupdesc)
 	/* 1. Set is_nextmaster = false to all nodes */
 	snprintf(sql, BUFSIZE, KEEPER_SQL_ALL_FALSE, KEEPER_MANAGE_TABLE_NAME);
 	sql[strlen(sql)] = '\0';
-	spiSQLExec(sql);
+	spiSQLExec(sql, false);
 
 	/*
 	 * 2. Set is_nextmaster = true to a appropriate node
@@ -105,7 +127,7 @@ updateNextMaster(TupleDesc tupdesc)
 	 */
 	snprintf(sql, BUFSIZE, KEEPER_SQL_ALL_NODE, KEEPER_MANAGE_TABLE_NAME);
 	sql[strlen(sql)] = '\0';
-	spiSQLExec(sql);
+	spiSQLExec(sql, false);
 	num = SPI_processed;
 
 	/* Select next master */
@@ -139,12 +161,13 @@ updateNextMaster(TupleDesc tupdesc)
 	if (!got_seqno)
 		seqno = reserve_seqno;
 
-	elog(LOG, "seqno %d, node \"%s\" is selected as a next master", seqno, standby_name);
+	ereport(LOG, (errmsg("seqno %d, node \"%s\" is selected as a next master",
+						 seqno, standby_name)));
 
 	snprintf(sql, BUFSIZE, KEEPER_SQL_SET_NEXT_MASTER,
 			 KEEPER_MANAGE_TABLE_NAME, seqno);
 	sql[strlen(sql)] = '\0';
-	spiSQLExec(sql);
+	spiSQLExec(sql, false);
 }
 
 /*
@@ -182,6 +205,62 @@ addNewNode(TupleDesc tupdesc, text *node_name, text *conninfo,
 	values[4] = BoolGetDatum(is_sync);
 
 	ret = SPI_execp(plan, values, NULL, 1);
+}
+
+bool
+deleteNodeBySeqno(int seqno)
+{
+#define KEEPER_SQL_DELETE_BY_SEQNO "DELETE FROM %s WHERE seqno = %d"
+	char sql[BUFSIZE];
+	bool ret;
+
+	snprintf(sql, BUFSIZE, KEEPER_SQL_DELETE_BY_SEQNO, KEEPER_MANAGE_TABLE_NAME,
+			 seqno);
+	sql[strlen(sql)] = '\0';
+
+	ret = spiSQLExec(sql, false);
+
+	return ret;
+}
+
+bool
+deleteNodeByName(const char *name)
+{
+#define KEEPER_SQL_DELETE_BY_NAME "DELETE FROM %s WHERE name = '%s'"
+	char sql[BUFSIZE];
+	bool ret;
+
+	snprintf(sql, BUFSIZE, KEEPER_SQL_DELETE_BY_NAME, KEEPER_MANAGE_TABLE_NAME,
+			 name);
+	sql[strlen(sql)] = '\0';
+
+	ret = spiSQLExec(sql, false);
+
+	return ret;
+}
+
+/* Check if pg_keeper is already installed */
+bool
+checkExtensionInstalled(void)
+{
+	bool ret = true;
+	Oid extension_oid;
+
+	SetCurrentStatementStartTimestamp();
+	StartTransactionCommand();
+	SPI_connect();
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	extension_oid = get_extension_oid("pg_keeper", true);
+
+	if (extension_oid == InvalidOid)
+		ret = false;
+
+	SPI_finish();
+	PopActiveSnapshot();
+	CommitTransactionCommand();
+
+	return ret;
 }
 
 /*
@@ -231,10 +310,13 @@ getAllRepNodes(int *num, bool newtx)
 /*
  * Update its own local cache information about RepNodes. Note that thi
  * fucntion bein new transaction, so could not be called in transaction.
+ * while updating own cache, send SIGUSR1 indirectly to all stnadbys if
+ * propagete is true.
  */
 void
-updateLocalCache(void)
+updateLocalCache(bool propagate)
 {
+#define KEEPER_SQL_INDIRECT_KILL "SELECT pgkeeper.indirect_kill('SIGUSR1')"
 	SPITupleTable *tuptable;
 	TupleDesc tupdesc;
 	int i;
@@ -250,7 +332,6 @@ updateLocalCache(void)
 	rel = get_rel_from_relname(cstring_to_text(KEEPER_MANAGE_TABLE_NAME), AccessShareLock,
 							   ACL_SELECT);
 	tupdesc = rel->rd_att;
-
 
 	/* Get node information from table */
 	tuptable = getAllRepNodes(&num, false);
@@ -275,8 +356,12 @@ updateLocalCache(void)
 		KeeperRepNodes[i].name = strdup(SPI_getvalue(tuple, tupdesc, 2));
 		KeeperRepNodes[i].conninfo = strdup(SPI_getvalue(tuple, tupdesc, 3));
 		KeeperRepNodes[i].is_master = SPI_getbinval(tuple, tupdesc, 4, &isNull);
-		KeeperRepNodes[i].is_next_master = SPI_getbinval(tuple, tupdesc, 5, &isNull);
+		KeeperRepNodes[i].is_nextmaster = SPI_getbinval(tuple, tupdesc, 5, &isNull);
 		KeeperRepNodes[i].is_sync = SPI_getbinval(tuple, tupdesc, 6, &isNull);
+
+		/* Send kill indirectly except for master server */
+		if (propagate && !(KeeperRepNodes[i].is_master))
+			execSQL(KeeperRepNodes[i].conninfo, KEEPER_SQL_INDIRECT_KILL, NULL);
 	}
 
 	nKeeperRepNodes = num;
@@ -286,4 +371,60 @@ updateLocalCache(void)
 	SPI_finish();
 	PopActiveSnapshot();
 	CommitTransactionCommand();
+
+	set_ps_display(getStatusPsString(current_status, nKeeperRepNodes), false);
+	ereport(NOTICE, (errmsg("pg_keeper updates own cache, currently number of nodes is %d",
+						 nKeeperRepNodes)));
+}
+
+/*
+ * Pfree and palloc again the given retry_counts.
+ */
+int *
+resetRetryCounts(int *retry_counts)
+{
+	if (retry_counts)
+		pfree(retry_counts);
+
+	retry_counts = palloc0(sizeof(int) * nKeeperRepNodes);
+
+	return retry_counts;
+}
+
+/*
+ * Return true if give name is regarded as the next master.
+ */
+bool
+isNextMaster(const char *name)
+{
+	int i;
+	bool ret = false;
+
+	for (i = 0; i < nKeeperRepNodes; i++)
+	{
+		KeeperNode *node = &(KeeperRepNodes[i]);
+
+		if (node->is_nextmaster &&
+			pg_strcasecmp(name, node->name) == 0)
+		{
+			ret = true;
+			break;
+		}
+	}
+
+	/* Return true if there is any result by SQL */
+	return ret;
+}
+
+/* Convert boolean string to bool value */
+bool
+str_to_bool(const char *string)
+{
+	if (pg_strcasecmp(string, "true") == 0 ||
+		pg_strcasecmp(string, "on") == 0 ||
+		pg_strcasecmp(string, "1") == 0 ||
+		pg_strcasecmp(string, "t") == 0)
+		return true;
+	else
+		return false;
 }

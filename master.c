@@ -40,8 +40,6 @@ bool	KeeperMainMaster(void);
 void	setupKeeperMaster(void);
 
 static void changeToAsync(void);
-static bool checkStandbyIsConnected(void);
-static void resetRetryCounts(void);
 static bool heartbeatServerMaster(int *r_counts);
 
 /* Variables for heartbeat */
@@ -53,10 +51,15 @@ static int *retry_counts;
 void
 setupKeeperMaster()
 {
-	/* Set process display which is exposed by ps command */
-	set_ps_display(getStatusPsString(current_status), false);
+	/* Initialize */
+	retry_counts = resetRetryCounts(retry_counts);
 
-	return;
+	/* Set process display which is exposed by ps command */
+	set_ps_display(getStatusPsString(current_status, 0), false);
+
+	/* Update own cache if pg_keeper is already installed */
+	if (checkExtensionInstalled())
+		updateLocalCache(false);
 }
 
 /*
@@ -95,19 +98,17 @@ KeeperMainMaster(void)
 			parse_synchronous_standby_names();
 		}
 
+		/* If got SIGUSR1, update local cache for KeeperRepNodes */
 		if (got_sigusr1)
 		{
 			got_sigusr1 = false;
 			pg_usleep(1 * 1000L * 1000L);
 
-			/* Update own memory */
-			updateLocalCache();
+			/* Update own memory and send SIGUSR1 of other standbys indirectly */
+			updateLocalCache(true);
 
 			/* Update retry_counts information */
-			resetRetryCounts();
-
-			elog(LOG, "pg_keeper update own cache, currently number of nodes is %d",
-				 nKeeperRepNodes);
+			retry_counts = resetRetryCounts(retry_counts);
 		}
 
 		/*
@@ -118,15 +119,16 @@ KeeperMainMaster(void)
 		{
 			int num = 0;
 
+			/* Check if any standby is already connected */
 			getAllRepNodes(&num, true);
 
 			/* Standby connected */
 			if (num > 1)
 			{
 				current_status = KEEPER_MASTER_CONNECTED;
-				set_ps_display(getStatusPsString(current_status), false);
-				elog(LOG, "pg_keeper connects to standby server");
-				resetRetryCounts();
+				updateLocalCache(false);
+				ereport(LOG, (errmsg("pg_keeper connects to standby server")));
+				retry_counts = resetRetryCounts(retry_counts);
 			}
 		}
 		else if (current_status == KEEPER_MASTER_CONNECTED)
@@ -139,6 +141,7 @@ KeeperMainMaster(void)
 			 */
 			if (!heartbeatServerMaster(retry_counts))
 			{
+				/* Change to asynchronous replication */
 				changeToAsync();
 
 				/*
@@ -146,8 +149,8 @@ KeeperMainMaster(void)
 				 * state of itself and restart pooling.
 				 */
 				current_status = KEEPER_MASTER_ASYNC;
-				set_ps_display(getStatusPsString(current_status), false);
-				resetRetryCounts();
+				updateLocalCache(false);
+				retry_counts = resetRetryCounts(retry_counts);
 
 				/* XXX : Should we change all is_sync on management table to false? */
 			}
@@ -163,7 +166,7 @@ KeeperMainMaster(void)
 
 /*
  * heartbeatServerMaster()
- * Pooling to standby servers. Return false iif we could not pool the standbys enough
+ * Polling to standby servers. Return false iif we could not poll the standbys enough
  * to continue synchronous replication at more than keeper_keepalive_count *in a row*.
  */
 static bool
@@ -192,11 +195,15 @@ heartbeatServerMaster(int *r_counts)
 		/* Count registred sync node */
 		registered_sync++;
 
-		if (!(execSQL(connstr, HEARTBEAT_SQL)))
+		if (!(heartbeatServer(connstr)))
 		{
+			/* Increment retry count of this node */
 			(r_counts[i])++;
-			ereport(LOG,
-					(errmsg("pg_keeper failed to execute pooling %d time(s)", r_counts[i] + 1)));
+
+			/* Emit warning log */
+			ereport(WARNING,
+					(errmsg("pg_keeper failed to poll to \"%s\" at %d time(s)",
+							connstr, r_counts[i])));
 
 			/* Check if we could not connect to "sync" standby */
 			if (r_counts[i] > keeper_keepalives_count)
@@ -223,9 +230,6 @@ heartbeatServerMaster(int *r_counts)
 		retry_count_reached)
 		connect_enough = false;
 
-	elog(NOTICE, "total %d, registerd_sync %d, connect_sync %d, required_sync %d, connect_enough %d",
-		 nKeeperRepNodes, registered_sync, connect_sync, RepConfig->num_sync, connect_enough);
-
 	return connect_enough;
 }
 
@@ -239,54 +243,14 @@ changeToAsync(void)
 {
 	int ret;
 
-	elog(LOG, "pg_keeper changes replication mode to asynchronous replication");
+	ret = spiSQLExec(ALTER_SYSTEM_COMMAND, true);
 
-	/* Attempt to execute ALTER SYSTEM command */
-	if (!execSQL(KeeperMaster, ALTER_SYSTEM_COMMAND))
-		ereport(ERROR,
+	if (!ret)
+		ereport(LOG,
 				(errmsg("failed to execute ALTER SYSTEM to change to asynchronous replication")));
 
 	/* Then, send SIGHUP signal to Postmaster process */
 	if ((ret = kill(PostmasterPid, SIGHUP)) != 0)
 		ereport(ERROR,
 				(errmsg("failed to send SIGHUP signal to postmaster process : %d", ret)));
-}
-
-/*
- * Check if synchronous ustandby server has conncted to master server
- * through checking pg_stat_replication system view via SPI.
- */
-static bool
-checkStandbyIsConnected()
-{
-	int ret;
-	bool found;
-
-	SetCurrentStatementStartTimestamp();
-	StartTransactionCommand();
-	SPI_connect();
-	PushActiveSnapshot(GetTransactionSnapshot());
-
-	ret = SPI_exec(STAT_REPLICATION_COMMAND, 0);
-
-	if (ret != SPI_OK_SELECT)
-		ereport(ERROR,
-				(errmsg("failed to execute SELECT to confirm connecting standby server")));
-
-	found = SPI_processed >= 1;
-
-	SPI_finish();
-	PopActiveSnapshot();
-	CommitTransactionCommand();
-
-	return found;
-}
-
-static void
-resetRetryCounts(void)
-{
-	if (retry_counts)
-		pfree(retry_counts);
-
-	retry_counts = palloc0(sizeof(int) * nKeeperRepNodes);
 }
