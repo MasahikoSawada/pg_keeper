@@ -1,4 +1,4 @@
-pg_keeper
+pg_keeper 1.0
 ===========
 
 pg_keeper is a simplified clustering module for PostgreSQL, to promote a standby server to master in a 2 servers cluster.
