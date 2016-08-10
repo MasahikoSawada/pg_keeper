@@ -3,7 +3,7 @@ pg_keeper 1.0
 
 pg_keeper is a simplified clustering module for PostgreSQL, to promote a standby server to master in a 2 servers cluster.
 
-The lisence of pg_keeper is [PostgreSQL Lisence](https://opensource.org/licenses/postgresql). (same as BSD Lisence)
+The license of pg_keeper is [PostgreSQL Lisence](https://opensource.org/licenses/postgresql). (same as BSD Lisence)
 
 ## Prerequisite
 pg_keeper requires a master and hot standby servers in PostgreSQL 9.3 or later, on a Linux OS.
