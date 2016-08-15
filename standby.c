@@ -2,7 +2,7 @@
  *
  * standby.c
  *
- * standb mode for pg_keeper.
+ * standby mode for pg_keeper.
  *
  * -------------------------------------------------------------------------
  */
