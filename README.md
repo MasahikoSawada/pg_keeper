@@ -10,7 +10,7 @@ The license of pg_keeper is [PostgreSQL License](https://opensource.org/licenses
 
 pg_keeper has two versions, [1.0](https://github.com/MasahikoSawada/pg_keeper/tree/REL1_0_STABLE) and 2.0.
 
-|Version|Monitoring replication|Automatic failover|Node registration|Manage multiple standbys|
+|Version|Monitoring replication|Automatic failover|Node registration|Manage Multiple Standbys|
 |:-----:|:--------------------:|:----------------:|:---------------:|:----------------------:|
 |1.0|Support|Support|GUC parameter|Not support|
 |2.0|Support|Support|Function|Support|
@@ -50,7 +50,7 @@ With this, fail over time can be calculated with this formula.
 (F/O time) = pg_keeper.keepalives_time * pg_keeper.keepalives_count
 ```
 
-### Automatic Failover and  Switching Asynchronous Replication
+### Automatic Failover
 
 If the master server crashes for whatever reason, pg_keeper promotes a selected standby server of multiple standby servers.
 The number of failover target server (i.g, next master server) is always one, it's never happend that multiple standbys try to promote at the same time.
@@ -65,7 +65,7 @@ Using this feature, even if the network connection (b) is failed but the master 
 master -------(b)---- standby2
        \                   |
         \                  |
-	     `----(c)-----standby3
+         `----(c)-----standby3
 ```
 
 ### Automatic switching to asynchronous replication
@@ -82,7 +82,7 @@ There are following requirement to use pg_keeper.
 + `hot_standby` has to be enable on all servers.
 + `max_worker_processes` should be > 1.
 + `*` is not allowed to set to `synchronous_standby_names`.
-+ All standby servers can connect each other.
++ All standby servers can connect with each other.
 
 ## GUC paramters
 Note that the paramteres with (*) are mandatory options.
