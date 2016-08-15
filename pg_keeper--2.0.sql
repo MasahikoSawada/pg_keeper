@@ -1,4 +1,4 @@
-/* pg_keeper/pg_keepe--1.0.sql */
+/* pg_keeper/pg_keepe--2.0.sql */
 
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
 \echo Use "CREATE EXTENSION pg_keeper" to load this file. \quit
@@ -9,7 +9,7 @@ CREATE SCHEMA pgkeeper;
 -- Register ndoe management table
 CREATE TABLE pgkeeper.node_info(
 seqno		serial,
-name		text,
+name		text primary key,
 conninfo	text,
 is_master	bool,
 is_nextmaster	bool,
