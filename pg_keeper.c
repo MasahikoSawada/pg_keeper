@@ -541,20 +541,3 @@ getStatusPsString(KeeperStatus status, int num)
 
 	return str.data;
 }
-
-char *
-getStatusPsString(KeeperStatus status)
-{
-	if (status == KEEPER_STANDBY_READY)
-		return "(standby:ready)";
-	else if (status == KEEPER_STANDBY_CONNECTED)
-		return "(standby:connected)";
-	else if (status == KEEPER_STANDBY_ALONE)
-		return "(standby:alone)";
-	else if (status == KEEPER_MASTER_READY)
-		return "(master:ready)";
-	else if (status == KEEPER_MASTER_CONNECTED)
-		return "(master:connected)";
-	else /* status == KEEPER_MASTER_ASYNC) */
-		return "(master:async)";
-}
