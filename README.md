@@ -1,9 +1,23 @@
 pg_keeper 2.0
 ===========
 
-pg_keeper is a simplified clustering module for PostgreSQL, to promote a standby server to master in a 2 servers cluster.
+pg_keeper is a simplified clustering module for PostgreSQL among with one master server and multiple standby servers.
+It provides capability of monitoring replication, automatic failover and manual switch over operations.
 
 The license of pg_keeper is [PostgreSQL License](https://opensource.org/licenses/postgresql). (same as BSD License)
+
+## Version
+
+pg_keeper has two versions, [1.0](https://github.com/MasahikoSawada/pg_keeper/tree/REL1_0_STABLE) and 2.0.
+
+|Version|Monitoring replication|Automatic failover|Node registration|Manage multiple standbys|
+|:-----:|:--------------------:|:----------------:|:---------------:|:----------------------:|
+|1.0|Support|Support|GUC parameter|Not support|
+|2.0|Support|Support|Function|Support|
+
+The difference between 1.0 and 2.0 are two points, node registration and supporting multiple stnadbys.
+If you set up only two servers, one master server and one standby server, it's better to use version 1.0.
+If you set up replication with more than 1 standbys, you need to use version 2.0.
 
 ## Prerequisite
 pg_keeper requires a master and hot standby servers in PostgreSQL 9.3 or later, on a Linux OS.
@@ -36,6 +50,30 @@ With this, fail over time can be calculated with this formula.
 (F/O time) = pg_keeper.keepalives_time * pg_keeper.keepalives_count
 ```
 
+### Automatic Failover and  Switching Asynchronous Replication
+
+If the master server crashes for whatever reason, pg_keeper promotes a selected standby server of multiple standby servers.
+The number of failover target server (i.g, next master server) is always one, it's never happend that multiple standbys try to promote at the same time.
+
+pg_keeper has the unique polling feature (called "indirect polling" in source code) which polls to the master server via other stnadbys. That is, one standby server polls to the master server directly and indirectly.
+Using this feature, even if the network connection (b) is failed but the master server is still live in follow diag, standby2 polls to the master server via other standbys, standby1 and standby3 server. So pg_keeper can promote a standby server only when all standby servers failed to poll to the master server more than specified times. 
+
+```
+         .----(a)---- standby1
+        /                  |
+       /                   |
+master -------(b)---- standby2
+       \                   |
+        \                  |
+	     `----(c)-----standby3
+```
+
+### Automatic switching to asynchronous replication
+
+If the some synchronous standby servers crashed for whatever reason, the client could not continue to transaction. Because the PostgreSQL backend process waits for the ACK from the sychronous standby servers forever. (Please see [Synchronous Replication](https://www.postgresql.org/docs/current/static/warm-standby.html#SYNCHRONOUS-REPLICATION) for more detail).
+
+pg_keeper can detect it when the number of connecting synchronous standbys enough to continue synchronous replication is less than specified value in `synchronous_standby_names`, and then swtiches `synchronous_stnadby_names` to `''` using `ALTER SYSTEM` command.
+
 ## Requirement
 There are following requirement to use pg_keeper.
 
@@ -44,6 +82,7 @@ There are following requirement to use pg_keeper.
 + `hot_standby` has to be enable on all servers.
 + `max_worker_processes` should be > 1.
 + `*` is not allowed to set to `synchronous_standby_names`.
++ All standby servers can connect each other.
 
 ## GUC paramters
 Note that the paramteres with (*) are mandatory options.
