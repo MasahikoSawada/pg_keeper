@@ -70,6 +70,7 @@ KeeperStatus current_status;
 int 		*PgKeeperPid;
 KeeperNode 	*KeeperRepNodes;
 int 		nKeeperRepNodes;
+bool		promoted = false;
 
 /*
  * add_node()
@@ -130,14 +131,14 @@ add_node(PG_FUNCTION_ARGS)
 	addNewNode(rel->rd_att, node_name, conninfo, is_master, false, is_sync);
 
 	/* Update next mater among with nodes */
-	updateNextMaster(rel->rd_att);
+	updateManageTableAccordingToSSNames(false);
 
 	/* update next master info */
 	//CommitTransactionCommand();
 
+	relation_close(rel, AccessShareLock);
 	SPI_finish();
 	PopActiveSnapshot();
-	relation_close(rel, AccessShareLock);
 
 	/* Inform keeper process to update its local cache */
 	kill(*PgKeeperPid, SIGUSR1);
@@ -159,6 +160,8 @@ del_node(PG_FUNCTION_ARGS)
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	ret = deleteNodeByName(node_name);
+
+	updateManageTableAccordingToSSNames(false);
 
 	SPI_finish();
 	PopActiveSnapshot();
@@ -183,6 +186,8 @@ del_node_by_seqno(PG_FUNCTION_ARGS)
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	ret = deleteNodeBySeqno(seqno);
+
+	updateManageTableAccordingToSSNames(false);
 
 	SPI_finish();
 	PopActiveSnapshot();
@@ -323,6 +328,7 @@ pg_keeper_sigterm(SIGNAL_ARGS)
 	int			save_errno = errno;
 
 	got_sigterm = true;
+
 	if (MyProc)
 		SetLatch(&MyProc->procLatch);
 
@@ -481,9 +487,6 @@ execSQL(const char *conninfo, const char *sql, bool *result)
 
 	res = PQexec(con, sql);
 
-	if (result != NULL)
-		*result = str_to_bool(PQgetvalue(res, 0, 0));
-
 	if (PQresultStatus(res) != PGRES_TUPLES_OK &&
 		PQresultStatus(res) != PGRES_COMMAND_OK)
 	{
@@ -495,6 +498,9 @@ execSQL(const char *conninfo, const char *sql, bool *result)
 		PQfinish(con);
 		return false;
 	}
+
+	if (result != NULL)
+		*result = str_to_bool(PQgetvalue(res, 0, 0));
 
 	/* Primary server is alive now */
 	PQfinish(con);
@@ -526,7 +532,7 @@ getStatusPsString(KeeperStatus status, int num)
 	else if (status == KEEPER_STANDBY_ALONE)
 		appendStringInfo(&str, "(standby:alone, %d)", num);
 	else if (status == KEEPER_MASTER_READY)
-		return "(master:ready)";
+		appendStringInfo(&str, "(master:ready, %d)", num);
 	else if (status == KEEPER_MASTER_CONNECTED)
 		appendStringInfo(&str, "(master:connected, %d)", num);
 	else /* status == KEEPER_MASTER_ASYNC) */

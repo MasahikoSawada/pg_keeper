@@ -75,3 +75,4 @@ extern char *keeper_node_name;
 extern KeeperStatus	current_status;
 extern KeeperNode *KeeperRepNodes;
 extern int nKeeperRepNodes;
+extern bool promoted;

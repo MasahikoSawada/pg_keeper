@@ -41,6 +41,8 @@ void	setupKeeperMaster(void);
 
 static void changeToAsync(void);
 static bool heartbeatServerMaster(int *r_counts);
+static bool deleteMaster(void);
+static bool updateNewMaster(void);
 
 /* Variables for heartbeat */
 static int *retry_counts;
@@ -51,15 +53,15 @@ static int *retry_counts;
 void
 setupKeeperMaster()
 {
-	/* Initialize */
-	retry_counts = resetRetryCounts(retry_counts);
-
 	/* Set process display which is exposed by ps command */
 	set_ps_display(getStatusPsString(current_status, 0), false);
 
 	/* Update own cache if pg_keeper is already installed */
 	if (checkExtensionInstalled())
+	{
 		updateLocalCache(false);
+		retry_counts = resetRetryCounts(retry_counts);
+	}
 }
 
 /*
@@ -96,6 +98,7 @@ KeeperMainMaster(void)
 			got_sighup = false;
 			ProcessConfigFile(PGC_SIGHUP);
 			parse_synchronous_standby_names();
+			updateManageTableAccordingToSSNames(true);
 		}
 
 		/* If got SIGUSR1, update local cache for KeeperRepNodes */
@@ -117,17 +120,48 @@ KeeperMainMaster(void)
 		 */
 		if (current_status == KEEPER_MASTER_READY)
 		{
-			int num = 0;
+			int n_in_table = 0;
+			int n_connect_standbys;
+
+			/*
+			 * the master server is ready status but after promoted,
+			 * we should update new master server.
+			 */
+			if (promoted && !RecoveryInProgress())
+			{
+					START_SPI_TRANSACTION();
+
+					/* Update RepConfig data */
+					parse_synchronous_standby_names();
+					/* Delete old master */
+					deleteMaster();
+					/* Set new master */
+					updateNewMaster();
+					/* Update management table */
+					updateManageTableAccordingToSSNames(false);
+
+					END_SPI_TRANSACTION();
+
+					/* Update local cache */
+					updateLocalCache(false);
+
+					promoted = false;
+			}
 
 			/* Check if any standby is already connected */
-			getAllRepNodes(&num, true);
+			getAllRepNodes(&n_in_table, true);
+			n_connect_standbys = getNumberOfConnectingStandbys();
 
-			/* Standby connected */
-			if (num > 1)
+			/*
+			 * Once enough standbys are connecting to the master server and
+			 * all standbys are registered to manage table, start to monitoring.
+			 */
+			if (n_connect_standbys > 0 && (n_connect_standbys + 1) == n_in_table)
 			{
 				current_status = KEEPER_MASTER_CONNECTED;
 				updateLocalCache(false);
-				ereport(LOG, (errmsg("pg_keeper connects to standby server")));
+				ereport(LOG,
+						(errmsg("pg_keeper connects to standby servers, start monitoring")));
 				retry_counts = resetRetryCounts(retry_counts);
 			}
 		}
@@ -253,4 +287,38 @@ changeToAsync(void)
 	if ((ret = kill(PostmasterPid, SIGHUP)) != 0)
 		ereport(ERROR,
 				(errmsg("failed to send SIGHUP signal to postmaster process : %d", ret)));
+}
+
+/*
+ * Delete the master server row from management table.
+ */
+static bool
+deleteMaster(void)
+{
+#define KEEPER_SQL_DELETE_MASTER "DELETE FROM %s WHERE is_master"
+	StringInfoData sql;
+	bool ret;
+
+	initStringInfo(&sql);
+	appendStringInfo(&sql, KEEPER_SQL_DELETE_MASTER, KEEPER_MANAGE_TABLE_NAME);
+	ret = spiSQLExec(sql.data, false);
+
+	return ret;
+}
+
+/*
+ * Set the standby node marked is_nextmaster to new master server.
+ */
+static bool
+updateNewMaster(void)
+{
+#define KEEPER_SQL_UPDATE_NEW_MASTER "UPDATE %s SET is_master = true WHERE is_nextmaster"
+	StringInfoData sql;
+	bool ret;
+
+	initStringInfo(&sql);
+	appendStringInfo(&sql, KEEPER_SQL_UPDATE_NEW_MASTER, KEEPER_MANAGE_TABLE_NAME);
+	ret = spiSQLExec(sql.data, false);
+
+	return ret;
 }

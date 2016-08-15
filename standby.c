@@ -47,15 +47,16 @@ static int *retry_counts;
 void
 setupKeeperStandby()
 {
-	/* Initialize */
-	retry_counts = resetRetryCounts(retry_counts);
-
 	/* Set process display which is exposed by ps command */
 	current_status = KEEPER_STANDBY_CONNECTED;
+	set_ps_display(getStatusPsString(current_status, 0), false);
 
 	/* Initialize own cache if pg_keeper is already installed */
 	if (checkExtensionInstalled())
+	{
 		updateLocalCache(false);
+		retry_counts = resetRetryCounts(retry_counts);
+	}
 }
 
 /*
@@ -113,18 +114,20 @@ KeeperMainStandby(void)
 		 * keeper_keepalives_count, do promote the standby server to master server,
 		 * and exit.
 		 */
-		if (!heartbeatServerStandby(retry_counts))
+		if (!got_sigterm && !heartbeatServerStandby(retry_counts))
 		{
-			bool promoted;
+			bool ret;
 
 			/* Promote */
-			promoted = doPromote();
+			ret = doPromote();
 
-			if (promoted)
+			if (ret)
 			{
 				/* If after command is given, execute it */
 				if (keeper_after_command)
 					doAfterCommand();
+
+				promoted = true;
 			}
 
 			/* Change to status of this node to master mode */
@@ -134,7 +137,7 @@ KeeperMainStandby(void)
 		}
 	}
 
-	return true;
+	return false;
 }
 
 /*
@@ -257,8 +260,8 @@ heartbeatServerStandby(int *retry_counts)
 		{
 			/* Emit warning log */
 			ereport(LOG,
-					(errmsg("pg_keeper failed to poll to \"%s\" at %d time(s)",
-							connstr, retry_counts[i])));
+					(errmsg("neighbor standby server seems to be falied:\"%s\"",
+							connstr)));
 
 			/* Neighbor standby migit be not available, ignore this result */
 			continue;
@@ -271,7 +274,7 @@ heartbeatServerStandby(int *retry_counts)
 
 			/* Emit warning log */
 			ereport(LOG,
-					(errmsg("pg_keeper could not poll to the master server via \"%s\" at %d time(s)",
+					(errmsg("failed to indirect polling to master server via \"%s\" at %d time(s)",
 							connstr, retry_counts[i])));
 
 			/* Check if retry_counts exceeds the threshold */
@@ -295,4 +298,5 @@ heartbeatServerStandby(int *retry_counts)
 		return false;
 
 	return true;
+
 }
