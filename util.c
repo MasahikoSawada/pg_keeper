@@ -367,7 +367,7 @@ updateManageTableAccordingToSSNames(bool newtx)
 	char *standby_name;
 	int *sync_standbys;
 	int n_sync_standbys = 0;
-	int next_master_seqno;
+	int next_master_seqno = 0;
 	bool got_next_master_seqno = false;
 	StringInfoData sql;
 	TupleDesc tupdesc;

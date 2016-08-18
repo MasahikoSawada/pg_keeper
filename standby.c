@@ -214,7 +214,7 @@ heartbeatServerStandby(int *retry_counts)
 {
 #define KEEPER_SQL_INDIRECT_POOLING "SELECT pgkeeper.indirect_polling('%s')"
 	int i;
-	char *master_conninfo;
+	char *master_conninfo = NULL;
 	bool retry_count_reached = false;
 
 	/* Get master server connection information */
@@ -228,6 +228,8 @@ heartbeatServerStandby(int *retry_counts)
 			break;
 		}
 	}
+
+	Assert(master_conninfo);
 
 	/*
 	 * Polling to the all servers. Return if pg_keeper made a dicision to
