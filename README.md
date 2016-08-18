@@ -100,10 +100,10 @@ Specifies how many times pg_keeper try polling to master server in ordre to prom
 Specifies shell command that will be called after promoted.
 
 ## Magagement Table (pgkeeper.node_info)
-pg_keeper manages the all nodes on pgkeeper.node_info table. It's not allowed to modify this table directly. If you want to add new node or delete node then you can use provied pg_keeper's function.
+pg_keeper manages the all nodes on pgkeeper.node_info table in *pgkeeper* schema. It's not allowed to modify this table directly. If you want to add new node or delete node then you can use provied pg_keeper's function.
 
 |Column|Description|
-|:----:|:---------:|
+|:----|:---------|
 |seqno|Sequential number for each node (1..n)|
 |name| Node name|
 |conninfo|Connection info used fo hearbeat|
@@ -112,6 +112,7 @@ pg_keeper manages the all nodes on pgkeeper.node_info table. It's not allowed to
 |is_sync|True if the node is connecting as a synchronous standby|
 
 ## Functions
+All functions is installed into *pgkeeper* schema by `CREATE EXTENSION`.
 
 ### pgkeeper.add_node(node_name text, conninfo text)
 Register new active node to cluster management. Return true if registering node is successfuly done.
@@ -142,7 +143,7 @@ Reporting of building or testing pg_keeper on some platforms are very welcome.
 
 ## How to set up pg_keeper
 
-### Installation
+### 1. Installation
 pg_keeper needs to be installed into both master server and standby servers.
 
 ```
@@ -152,19 +153,20 @@ $ su
 # make USE_PGXS=1 install
 ```
 
-### Configration
+### 2. Configration
 For example, we set up two servers; pgserver1 and pgserver2. pgserver1 is the first master server and pgserver2 is the first standby server. We need to install pg_keeper in both servers and configure some parameters as follows.
 
 - On first master server
 ```
 $ vi postgresql.conf
+synchronous_standby_names = 'pgserver2, pgserver3' # If you use synchronous replication
 shared_preload_libraries = 'pg_keeper'
 pg_keeper.node_name = 'pgserver1'
 pg_keeper.keepalive_time = 5
 pg_keeper.keepalive_count = 3
 ```
 
-- On first standby server(s)
+- On first standby servers
 ```
 $ vi postgresql.conf
 shared_preload_libraries = 'pg_keeper'
@@ -173,45 +175,68 @@ pg_keeper.keepalive_time = 5
 pg_keeper.keepalive_count = 3
 ```
 
-### Starting servers
+### 3. Launch all servers
 We should start master server first that pg_keeper is installed. The master server's pg_keeper process will be launched when master server got started.
-Once pg_keeper on standby server connected master's pg_keeper process it will start to monitoring.
+After the master server launched, start all standby servers.
+Once pg_keeper on standby servers connected master's pg_keeper process monitoring will start.
 
-### Node Registration
-**The master server have to be added at first**. (Because pg_keeper ragard the first registerd server as a maseter server)
+### 4. Execute CREATE EXTENSION on all servers
+Execute `CREATE EXTENSION pg_keeper` on all servers in order to install pg_keeper functions, table.
+
+```:sql
+=# CREATE EXTENSION pg_keeper;
+CREATE EXTENSION
+=# \dx
+                        List of installed extensions
+   Name    | Version |   Schema   |               Description
+-----------+---------+------------+-----------------------------------------
+ pg_keeper | 2.0     | public     | simple bgworker based clustering module
+ plpgsql   | 1.0     | pg_catalog | PL/pgSQL procedural language
+(2 rows)
+```
+
+Make sure that pg_keeper is successfully installed.
+
+### 5. Node Registration
+**The master server have to be added at first**. (Because pg_keeper ragard the first registerd server as a master server)
 
 ```
-=# SELECT pgkeeper.add_node('pgserver1', 'host=pgserver1 port=5432 dbname=postgres');
+=# SELECT pgkeeper.add_node('pgserver1', 'host=pgserver1 port=5432 dbname=template1');
  add_node
  ----------
   t
   (1 row)
 =# SELECT * FROM pgkeeper.node_info;
- seqno |  name  |                  conninfo                | is_master | is_nextmaster | is_sync
--------+--------+------------------------------------------+-----------+---------------+---------
-     1 | master | host=pgserver1 port=5432 dbname=postgres | t         | f             | f
+ seqno |  name     |                  conninfo                 | is_master | is_nextmaster | is_sync
+-------+-----------+-------------------------------------------+-----------+---------------+---------
+     1 | pgserver1 | host=pgserver1 port=5432 dbname=template1 | t         | f             | f
 ```
 
-After registered the master server, register the standby server(s).
+After registered the master server, register the standby servers.
 
 ```
-=# SELECT pgkeeper.add_node('pgserver2', 'host=pgserver2 port=5432 dbname=postgres');
+=# SELECT pgkeeper.add_node('pgserver2', 'host=pgserver2 port=5432 dbname=template1');
+ add_node
+ ----------
+  t
+  (1 row)
+=# SELECT pgkeeper.add_node('pgserver3', 'host=pgserver3 port=5432 dbname=template1');
  add_node
  ----------
   t
   (1 row)
 =# SELECT * FROM pgkeeper.node_info;
- seqno |    name   |                  conninfo                | is_master | is_nextmaster | is_sync
--------+-----------+------------------------------------------+-----------+---------------+---------
-     1 | pgserver1 | host=pgserver1 port=5432 dbname=postgres | t         | f             | f
-     2 | pgserver2 | host=pgserver1 port=5432 dbname=postgres | f         | t             | t
+ seqno |    name   |                  conninfo                 | is_master | is_nextmaster | is_sync
+-------+-----------+-------------------------------------------+-----------+---------------+---------
+     1 | pgserver1 | host=pgserver1 port=5432 dbname=template1 | t         | f             | f
+     2 | pgserver2 | host=pgserver2 port=5432 dbname=template1 | f         | t             | t
+     3 | pgserver3 | host=pgserver3 port=5432 dbname=template1 | f         | f             | t
 ```
 
 After registered any standby server, the master server being to poll to all standby servers.
+Make sure that the number of nodes whom is_master is true and the number of nodes whom is_nextmaster is true are only one server.
 
-### Status
-
-### Uninstallation
+## Uninstallation
 + Following commands need to be executed in both master server and standby server.
 
 ```
