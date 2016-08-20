@@ -135,7 +135,7 @@ pg_keeper has been built and tested on following platforms:
 | Category | Module Name |
 |:--------:|:-----------:|
 |OS|CentOS 6.5|
-|PostgreSQL|9.5, 9.6beta3|
+|PostgreSQL|9.5, 9.6beta4|
 
 pg_keeper probably can work with PostgreSQL 9.3 or later, but not tested yet.
 
