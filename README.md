@@ -52,7 +52,7 @@ Note that the paramteres with (*) are mandatory options.
 
 - pg_keeper.after_command
 
-  - Specifies shell command that will be called after promoted.
+  - Specifies shell command that will be called after promoted. Setting stonith command to this parameter is useful for preventing the split-brain syndrome.
 
 ## Tested platforms
 pg_keeper has been built and tested on following platforms:
@@ -91,6 +91,58 @@ pg_keeper.node2_conninfo = 'host=pgserver2 port=5432 dbname=postgres'
 ```
 ### Starting servers
 We should start master server first that pg_keeper is installed in. master server's pg_keeper process will be launched when master server got started, once pg_keeper in standby server connected master's pg_keeper process it will start to work.
+
+After started both master server and slave server, make sure that pg_keeper process is launched successfully in appropriate state on both server.
+
+```
+-- On master server
+$ tail master.log
+LOG:  pg_keeper connects to standby server
+$ ps x | grep pg_keeper | grep -v grep
+33525 ?        Ss     0:00 postgres: bgworker: pg_keeper   (master mode:connected)
+```
+
+```
+-- On standby server
+$ ps x | grep pg_keeper | grep -v grep
+33613 ?        Ss     0:00 postgres: bgworker: pg_keeper   (standby mode:connected)
+```
+
+### Handling standby server failure (Autmatically changing sync replication to async replication)
+In case the standby server craches, because the master server cannnot replicate data to standby server the following transaction can not be processed. In this case, pg_keeper on the master server changes synchronous replication to asynchronous replication by changing `synchronous_standby_names` GUC parameter after detected the standby server failure.  You can see following server log on the master server.
+
+```
+$ cat master.log
+<2016-07-20 09:10:09.855 AST> LOG:  could not get tuple from server : "host=pgserver2 port=5432 dbname=postgres"
+<2016-07-20 09:10:09.855 AST> LOG:  pg_keeper failed to execute pooling 1 time(s)
+<2016-07-20 09:10:14.859 AST> LOG:  could not get tuple from server : "host=pgserver2 port=5432 dbname=postgres"
+<2016-07-20 09:10:14.859 AST> LOG:  pg_keeper failed to execute pooling 2 time(s)
+<2016-07-20 09:10:24.867 AST> LOG:  pg_keeper changes replication mode to asynchronous replication
+<2016-07-20 09:10:24.884 AST> LOG:  received SIGHUP, reloading configuration files
+<2016-07-20 09:10:24.885 AST> LOG:  parameter "synchronous_standby_names" changed to ""
+```
+
+After the standby server recovered, you need to set `synchronous_standby_names` parameter manually in order to set up streaming replication again.
+
+### Handling master server failure (Automatically failover)
+In case the master server craches, the standby server needs to promote to new master server. pg_keeper on the standby server promote it after detecting the master server failure. You can see following server log on the standby server.
+
+```
+$ tail standby.log
+<2016-07-20 09:14:30.622 AST>LOG:  could not get tuple from server : "host=pgserver1 port=5432 dbname=postgres"
+<2016-07-20 09:14:30.622 AST>LOG:  pg_keeper failed to execute pooling 1 time(s)
+<2016-07-20 09:14:35.628 AST>LOG:  could not get tuple from server : "host=pgserver1 port=5432 dbname=postgres"
+<2016-07-20 09:14:35.628 AST>LOG:  pg_keeper failed to execute pooling 2 time(s)
+<2016-07-20 09:14:45.641 AST>LOG:  promote standby server to primary server
+<2016-07-20 09:14:45.641 AST>LOG:  swtiched master and standby informations
+<2016-07-20 09:14:45.641 AST>DETAIL:  "port=5551 dbname=postgres" is regarded as master server, "port=5550 dbname=postgres" is regarded as standby server
+<2016-07-20 09:14:45.641 AST>LOG:  received promote request
+<2016-07-20 09:14:45.641 AST>LOG:  redo done at 0/3000060
+<2016-07-20 09:14:45.646 AST>LOG:  selected new timeline ID: 2
+<2016-07-20 09:14:45.690 AST>LOG:  archive recovery complete
+<2016-07-20 09:14:45.692 AST>LOG:  MultiXact member wraparound protections are now enabled
+<2016-07-20 09:14:45.693 AST>LOG:  database system is ready to accept connections
+```
 
 ### Uninstallation
 + Following commands need to be executed in both master server and standby server.
