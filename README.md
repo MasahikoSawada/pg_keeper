@@ -83,6 +83,7 @@ For example, we set up two servers; pgserver1 and pgserver2. pgserver1 is the fi
 
 ```
 $ vi postgresql.conf
+max_worker_processes = 8 # pg_keeper requires one worker on each side
 shared_preload_libraries = 'pg_keeper'
 pg_keeper.keepalive_time = 5
 pg_keeper.keepalive_count = 3
