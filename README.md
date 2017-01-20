@@ -159,6 +159,7 @@ For example, we set up two servers; pgserver1 and pgserver2. pgserver1 is the fi
 - On first master server
 ```
 $ vi postgresql.conf
+max_worker_processes = 8 # pg_keeper requires one worker on eash sie
 synchronous_standby_names = 'pgserver2, pgserver3' # If you use synchronous replication
 shared_preload_libraries = 'pg_keeper'
 pg_keeper.node_name = 'pgserver1'
@@ -169,6 +170,7 @@ pg_keeper.keepalive_count = 3
 - On first standby servers
 ```
 $ vi postgresql.conf
+max_worker_processes = 8 # pg_keeper requires one worker on eash sie
 shared_preload_libraries = 'pg_keeper'
 pg_keeper.node_name = 'pgserver2'
 pg_keeper.keepalive_time = 5
