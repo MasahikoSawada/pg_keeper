@@ -1,4 +1,4 @@
-pg_keeper 2.0
+pg_keeper
 ===========
 
 pg_keeper is a simplified clustering module for PostgreSQL among with one master server and multiple standby servers.
@@ -8,16 +8,16 @@ The license of pg_keeper is [PostgreSQL License](https://opensource.org/licenses
 
 ## Version
 
-pg_keeper has two versions, [1.0](https://github.com/MasahikoSawada/pg_keeper/tree/REL1_0_STABLE) and 2.0.
+pg_keeper has two versions, [1.0(stable)](https://github.com/MasahikoSawada/pg_keeper/tree/REL1_0_STABLE) and [master(unstable)](https://github.com/MasahikoSawada/pg_keeper/tree/master).
 
 |Version|Monitoring replication|Automatic failover|Node registration|Manage Multiple Standbys|
 |:-----:|:--------------------:|:----------------:|:---------------:|:----------------------:|
 |1.0|Support|Support|GUC parameter|Not support|
-|2.0|Support|Support|Function|Support|
+|master(unstable)|Support|Support|Function|Support|
 
-The difference between 1.0 and 2.0 are two points, node registration and supporting multiple standbys.
-If you set up only two servers, one master server and one standby server, it's better to use version 1.0.
-If you set up replication with more than 1 standbys, you need to use version 2.0.
+The difference between `1.0` and `master` are two points, node registration and supporting multiple standbys.
+If you set up only two servers, one master server and one standby server, it's better to use version `1.0`.
+If you set up replication with more than 1 standbys, you need to use version `master`.
 
 ## Prerequisite
 pg_keeper requires a master and hot standby servers in PostgreSQL 9.3 or later, on a Linux OS.
