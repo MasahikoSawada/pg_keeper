@@ -15,7 +15,7 @@ pg_keeper has two versions, [1.0](https://github.com/MasahikoSawada/pg_keeper/tr
 |1.0|Support|Support|GUC parameter|Not support|
 |2.0|Support|Support|Function|Support|
 
-The difference between 1.0 and 2.0 are two points, node registration and supporting multiple stnadbys.
+The difference between 1.0 and 2.0 are two points, node registration and supporting multiple standbys.
 If you set up only two servers, one master server and one standby server, it's better to use version 1.0.
 If you set up replication with more than 1 standbys, you need to use version 2.0.
 
@@ -36,7 +36,7 @@ The pg_keeper mode is determined automatially by itself.
 - master mode
 
 master mode of pg_keeper queries all standby servers at fixed intervals using a simple query 'SELECT 1'.
-If pg_keeper fails to get enough result to contiue synchronous replication after a certain number of tries, pg_keeper will change replication mode to asynchronous replcation so that backend process can avoid to wait infinity.
+If pg_keeper fails to get enough result to continue synchronous replication after a certain number of tries, pg_keeper will change replication mode to asynchronous replication so that backend process can avoid to wait infinity.
 
 - standby mode
 
@@ -53,10 +53,10 @@ With this, fail over time can be calculated with this formula.
 ### Automatic Failover
 
 If the master server crashes for whatever reason, pg_keeper promotes a selected standby server of multiple standby servers.
-The number of failover target server (i.g, next master server) is always one, it's never happend that multiple standbys try to promote at the same time.
+The number of failover target server (i.g, next master server) is always one, it's never happened that multiple standbys try to promote at the same time.
 
 pg_keeper has the unique polling feature (called "indirect polling" in source code) which polls to the master server via other stnadbys. That is, one standby server polls to the master server directly and indirectly.
-Using this feature, even if the network connection (b) is failed but the master server is still live in follow diag, standby2 polls to the master server via other standbys, standby1 and standby3 server. So pg_keeper can promote a standby server only when all standby servers failed to poll to the master server more than specified times. 
+Using this feature, even if the network connection (b) is failed but the master server is still live in following diagram, standby2 polls to the master server via other standbys, standby1 and standby3 server. So pg_keeper can promote a standby server only when all standby servers failed to poll to the master server more than specified times. 
 
 ```
          .----(a)---- standby1
@@ -94,13 +94,13 @@ Specifies node name string to be used for cluster management. This values have t
 Specifies how long interval pg_keeper continues polling. 5 second by default.
 
 ### pg_keeper.keepalive_count
-Specifies how many times pg_keeper try polling to master server in ordre to promote standby server. 1 time by default.
+Specifies how many times pg_keeper try polling to master server in order to promote standby server. 1 time by default.
 
 ### pg_keeper.after_command
 Specifies shell command that will be called after promoted.
 
 ## Magagement Table (pgkeeper.node_info)
-pg_keeper manages the all nodes on pgkeeper.node_info table in *pgkeeper* schema. It's not allowed to modify this table directly. If you want to add new node or delete node then you can use provied pg_keeper's function.
+pg_keeper manages the all nodes on pgkeeper.node_info table in *pgkeeper* schema. It's not allowed to modify this table directly. If you want to add new node or delete node then you can use provided pg_keeper's function.
 
 |Column|Description|
 |:----|:---------|
@@ -115,13 +115,13 @@ pg_keeper manages the all nodes on pgkeeper.node_info table in *pgkeeper* schema
 All functions is installed into *pgkeeper* schema by `CREATE EXTENSION`.
 
 ### pgkeeper.add_node(node_name text, conninfo text)
-Register new active node to cluster management. Return true if registering node is successfuly done.
+Register new active node to cluster management. Return true if registering node is successfully done.
 
 ## pgkeeper.del_node(node_name text)
-Remove node by node name. Return true if removing node is successfuly done.
+Remove node by node name. Return true if removing node is successfully done.
 
 ## pgkeeper.del_node(seqno text)
-Remove node by seqno. Return true if removing node is successfuly done.
+Remove node by seqno. Return true if removing node is successfully done.
 
 ## pgkeeper.indirect_polling(conninfo text)
 Poll to given node, which is used for heartbeat to master server. Return true if the connection between executing node and given node is available.
@@ -135,7 +135,7 @@ pg_keeper has been built and tested on following platforms:
 | Category | Module Name |
 |:--------:|:-----------:|
 |OS|CentOS 6.5|
-|PostgreSQL|9.5, 9.6beta3|
+|PostgreSQL|9.5, 9.6beta4|
 
 pg_keeper probably can work with PostgreSQL 9.3 or later, but not tested yet.
 
@@ -153,7 +153,7 @@ $ su
 # make USE_PGXS=1 install
 ```
 
-### 2. Configration
+### 2. Configuration
 For example, we set up two servers; pgserver1 and pgserver2. pgserver1 is the first master server and pgserver2 is the first standby server. We need to install pg_keeper in both servers and configure some parameters as follows.
 
 - On first master server
