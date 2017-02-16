@@ -256,7 +256,7 @@ heartbeatServer(const char *conninfo, int r_count)
 	if (!(execSQL(conninfo, HEARTBEAT_SQL)))
 	{
 		ereport(LOG,
-				(errmsg("pg_keeper failed to execute pooling %d time(s)", r_count + 1)));
+				(errmsg("pg_keeper failed to connect %d time(s)", r_count + 1)));
 		return false;
 	}
 
