@@ -20,6 +20,8 @@
 #include "tcop/utility.h"
 #include "libpq-int.h"
 
+#define KEEPER_MANAGE_TABLE "pgkeeper.node_info"
+
 typedef enum KeeperStatus
 {
 	KEEPER_STANDBY_READY = 0,
@@ -32,10 +34,8 @@ typedef enum KeeperStatus
 
 typedef struct KeeperNode
 {
+	char *name;
 	char *conninfo;
-	bool is_master;
-	bool is_next_master;
-	bool is_sync;
 } KeeperNode;
 
 /* pg_keeper.c */

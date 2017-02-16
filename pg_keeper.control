@@ -1,0 +1,4 @@
+# pg_keeper
+comment = 'simple bgworker based clustering module'
+default_version = '1.0'
+module_pathname = '$libdir/pg_keeper'

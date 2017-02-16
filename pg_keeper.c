@@ -13,6 +13,10 @@
 
 /* These are always necessary for a bgworker */
 #include "access/xlog.h"
+#include "access/htup_details.h"
+#include "access/reloptions.h"
+#include "access/xact.h"
+#include "executor/spi.h"
 #include "miscadmin.h"
 #include "postmaster/bgworker.h"
 #include "storage/ipc.h"
@@ -20,12 +24,18 @@
 #include "storage/lwlock.h"
 #include "storage/proc.h"
 #include "storage/shmem.h"
+#include "utils/snapmgr.h"
+#include "utils/builtins.h"
+#include "utils/rel.h"
 
 /* these headers are used by this particular worker's code */
 #include "tcop/utility.h"
 #include "libpq-int.h"
 
 PG_MODULE_MAGIC;
+
+PG_FUNCTION_INFO_V1(add_node);
+PG_FUNCTION_INFO_V1(del_node);
 
 #define HEARTBEAT_SQL "SELECT 1"
 
@@ -339,4 +349,63 @@ getStatusPsString(KeeperStatus status)
 		return "(master:connected)";
 	else /* status == KEEPER_MASTER_ASYNC) */
 		return "(master:async)";
+}
+
+Datum
+add_node(PG_FUNCTION_ARGS)
+{
+	char *node_name = text_to_cstring(PG_GETARG_TEXT_P(0));
+	char *conninfo = text_to_cstring(PG_GETARG_TEXT_P(1));
+	StringInfo sql = makeStringInfo();
+	int ret;
+
+	SetCurrentStatementStartTimestamp();
+	SPI_connect();
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	appendStringInfo(sql, "INSERT INTO %s VALUES('%s', '%s')",
+					 KEEPER_MANAGE_TABLE, node_name, conninfo);
+
+	/* Execute SQL */
+	ret = SPI_exec(sql->data, 1);
+
+	if (ret != SPI_OK_INSERT)
+	{
+		ereport(ERROR, (errmsg("failed to add node \"%s\"", node_name)));
+		PG_RETURN_BOOL(false);
+	}
+
+	SPI_finish();
+	PopActiveSnapshot();
+
+	PG_RETURN_BOOL(true);
+}
+
+Datum
+del_node(PG_FUNCTION_ARGS)
+{
+	char *node_name = text_to_cstring(PG_GETARG_TEXT_P(0));
+	StringInfo sql = makeStringInfo();
+	int ret;
+
+	SetCurrentStatementStartTimestamp();
+	SPI_connect();
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	appendStringInfo(sql, "DELETE FROM %s WHERE name = '%s'",
+					  KEEPER_MANAGE_TABLE, node_name);
+
+	/* Execute SQL */
+	ret = SPI_exec(sql->data, 0);
+
+	if (ret != SPI_OK_DELETE)
+	{
+		ereport(ERROR, (errmsg("failed to delete node \"%s\"", node_name)));
+		PG_RETURN_BOOL(false);
+	}
+
+	SPI_finish();
+	PopActiveSnapshot();
+
+	PG_RETURN_BOOL(true);
 }

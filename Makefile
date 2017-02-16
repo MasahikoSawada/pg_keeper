@@ -3,6 +3,9 @@
 MODULE_big = pg_keeper
 OBJS = pg_keeper.o master.o standby.o
 
+EXTENSION = pg_keeper
+DATA = pg_keeper--1.0.sql
+
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK = $(libpq)
 
