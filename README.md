@@ -146,7 +146,7 @@ Reporting of building or testing pg_keeper on some platforms are very welcome.
 ### 1. Installation
 pg_keeper needs to be installed into both master server and standby servers.
 
-```
+```console
 $ cd pg_keeper
 $ make USE_PGXS=1
 $ su
@@ -157,7 +157,7 @@ $ su
 For example, we set up two servers; pgserver1 and pgserver2. pgserver1 is the first master server and pgserver2 is the first standby server. We need to install pg_keeper in both servers and configure some parameters as follows.
 
 - On first master server
-```
+```console
 $ vi postgresql.conf
 max_worker_processes = 8 # pg_keeper requires one worker on eash sie
 synchronous_standby_names = 'pgserver2, pgserver3' # If you use synchronous replication
@@ -168,7 +168,7 @@ pg_keeper.keepalive_count = 3
 ```
 
 - On first standby servers
-```
+```console
 $ vi postgresql.conf
 max_worker_processes = 8 # pg_keeper requires one worker on eash sie
 shared_preload_libraries = 'pg_keeper'
@@ -185,7 +185,7 @@ Once pg_keeper on standby servers connected master's pg_keeper process monitorin
 ### 4. Execute CREATE EXTENSION on all servers
 Execute `CREATE EXTENSION pg_keeper` on all servers in order to install pg_keeper functions, table.
 
-```:sql
+```sql
 =# CREATE EXTENSION pg_keeper;
 CREATE EXTENSION
 =# \dx
@@ -202,7 +202,7 @@ Make sure that pg_keeper is successfully installed.
 ### 5. Node Registration
 **The master server have to be added at first**. (Because pg_keeper ragard the first registerd server as a master server)
 
-```
+```sql
 =# SELECT pgkeeper.add_node('pgserver1', 'host=pgserver1 port=5432 dbname=template1');
  add_node
  ----------
@@ -216,7 +216,7 @@ Make sure that pg_keeper is successfully installed.
 
 After registered the master server, register the standby servers.
 
-```
+```sql
 =# SELECT pgkeeper.add_node('pgserver2', 'host=pgserver2 port=5432 dbname=template1');
  add_node
  ----------
@@ -241,7 +241,7 @@ Make sure that the number of nodes whom is_master is true and the number of node
 ## Uninstallation
 + Following commands need to be executed in both master server and standby server.
 
-```
+```console
 $ cd pg_keeper
 $ make USE_PGXS=1
 $ su
@@ -250,7 +250,7 @@ $ su
 
 + Remove `pg_keeper` from shared_preload_libraries in postgresql.conf on both servers.
 
-```
+```console
 $ vi postgresql.conf
 shared_preload_libraries = ''
 ```
