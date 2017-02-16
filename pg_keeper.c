@@ -58,6 +58,9 @@ sig_atomic_t got_sigterm = false;
 /* GUC variables */
 int	keeper_keepalives_time;
 int	keeper_keepalives_count;
+char *keeper_name;
+char *keeper_paxos_host;
+int	keeper_paxos_port;
 
 /* Pointer to master/standby server connection infromation */
 char *KeeperMaster;
@@ -138,6 +141,41 @@ _PG_init(void)
 							   NULL,
 							   NULL,
 							   NULL);
+
+	DefineCustomStringVariable("pg_keeper.name",
+							   "Node name pg_keeper",
+							   NULL,
+							   &keeper_name,
+							   NULL,
+							   PGC_SIGHUP,
+							   GUC_NOT_IN_SAMPLE,
+							   NULL,
+							   NULL,
+							   NULL);
+
+	DefineCustomStringVariable("pg_keeper.paxos_host",
+							   "Host name pg_keeper uses for paxos",
+							   NULL,
+							   &keeper_paxos_host,
+							   NULL,
+							   PGC_SIGHUP,
+							   GUC_NOT_IN_SAMPLE,
+							   NULL,
+							   NULL,
+							   NULL);
+
+	DefineCustomIntVariable("pg_keeper.paxos_port",
+							"Port number pg_keeper uses for paxos",
+							NULL,
+							&keeper_paxos_port,
+							55432,
+							1,
+							65535,
+							PGC_SIGHUP,
+							GUC_NOT_IN_SAMPLE,
+							NULL,
+							NULL,
+							NULL);
 
 	/* set up common data for all our workers */
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |

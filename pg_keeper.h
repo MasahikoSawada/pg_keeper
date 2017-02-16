@@ -64,6 +64,9 @@ extern int	keeper_keepalives_count;
 extern char *keeper_node1_conninfo;
 extern char	*keeper_node2_conninfo;
 extern char *keeper_after_command;
+extern char *keeper_name;
+extern char *keeper_paxos_host;
+extern int	keeper_paxos_port;
 
 /* Variables for cluster management */
 extern KeeperStatus	current_status;
