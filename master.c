@@ -70,6 +70,8 @@ setupKeeperMaster()
 bool
 KeeperMainMaster(void)
 {
+	ereport(LOG, (errmsg("started pg_keeper worker as master mode")));
+
 	/*
 	 * Main loop: do this until the SIGTERM handler tells us to terminate
 	 */
