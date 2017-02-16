@@ -65,6 +65,8 @@ setupKeeperStandby()
 bool
 KeeperMainStandby(void)
 {
+	ereport(LOG, (errmsg("started pg_keeper worker as standby mode")));
+
 	/*
 	 * Main loop: do this until the SIGTERM handler tells us to terminate
 	 */
