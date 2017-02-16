@@ -16,6 +16,7 @@
 #include "access/htup_details.h"
 #include "access/reloptions.h"
 #include "access/xact.h"
+#include "catalog/namespace.h"
 #include "executor/spi.h"
 #include "miscadmin.h"
 #include "postmaster/bgworker.h"
@@ -24,9 +25,10 @@
 #include "storage/lwlock.h"
 #include "storage/proc.h"
 #include "storage/shmem.h"
-#include "utils/snapmgr.h"
 #include "utils/builtins.h"
+#include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/snapmgr.h"
 
 /* these headers are used by this particular worker's code */
 #include "tcop/utility.h"
@@ -67,6 +69,8 @@ char *KeeperMaster;
 char *KeeperStandby;
 
 KeeperStatus current_status;
+
+Oid keeperOid = InvalidOid;
 
 /*
  * Entrypoint of this module.
@@ -402,7 +406,7 @@ add_node(PG_FUNCTION_ARGS)
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	appendStringInfo(sql, "INSERT INTO %s VALUES('%s', '%s')",
-					 KEEPER_MANAGE_TABLE, node_name, conninfo);
+					 KEEPER_MANAGE_REL, node_name, conninfo);
 
 	/* Execute SQL */
 	ret = SPI_exec(sql->data, 1);
@@ -424,6 +428,7 @@ del_node(PG_FUNCTION_ARGS)
 {
 	char *node_name = text_to_cstring(PG_GETARG_TEXT_P(0));
 	StringInfo sql = makeStringInfo();
+	bool deleted;
 	int ret;
 
 	SetCurrentStatementStartTimestamp();
@@ -431,19 +436,122 @@ del_node(PG_FUNCTION_ARGS)
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	appendStringInfo(sql, "DELETE FROM %s WHERE name = '%s'",
-					  KEEPER_MANAGE_TABLE, node_name);
+					  KEEPER_MANAGE_REL, node_name);
 
 	/* Execute SQL */
 	ret = SPI_exec(sql->data, 0);
 
 	if (ret != SPI_OK_DELETE)
-	{
 		ereport(ERROR, (errmsg("failed to delete node \"%s\"", node_name)));
-		PG_RETURN_BOOL(false);
-	}
+
+	/* Must have deleted only one row */
+	if (SPI_processed > 1)
+		ereport(ERROR, (errmsg("deleted %lu rows unexpectedly",
+							   SPI_processed)));
+
+	deleted = (SPI_processed == 1) ? true : false;
 
 	SPI_finish();
 	PopActiveSnapshot();
 
-	PG_RETURN_BOOL(true);
+	PG_RETURN_BOOL(deleted);
+}
+
+/*
+ * Return pgKeeper node list from table.
+ */
+List *
+get_keepernode_list(void)
+{
+	List			*res = NIL;
+	StringInfo 		sql = makeStringInfo();
+	SPITupleTable 	*tuptable;
+	TupleDesc		tupdesc;
+	MemoryContext	resultcxt;
+	Relation		rel;
+	int ret;
+	int num;
+	int i;
+
+	/* Save caller memory context */
+	resultcxt = CurrentMemoryContext;
+
+	StartTransactionCommand();
+	SetCurrentStatementStartTimestamp();
+	SPI_connect();
+	(void) GetTransactionSnapshot();
+
+	/* If we didn't get OID of management table yet, get first */
+	if (keeperOid == InvalidOid)
+	{
+		Oid nspOid;
+		Oid tblOid;
+
+		nspOid = LookupExplicitNamespace(KEEPER_MANAGE_SCHEMA, false);
+		if (nspOid == InvalidOid)
+			ereport(ERROR, (errmsg("failed to get \"%s\" namespace oid",
+								   KEEPER_MANAGE_SCHEMA)));
+
+		tblOid = get_relname_relid(KEEPER_MANAGE_TABLE, nspOid);
+		if (tblOid == InvalidOid)
+			ereport(ERROR, (errmsg("failed to get \"%s\" table oid",
+								   KEEPER_MANAGE_REL)));
+
+		keeperOid = tblOid;
+	}
+
+	/* Get tuple description */
+	rel = relation_open(keeperOid, AccessShareLock);
+	tupdesc = rel->rd_att;
+
+	appendStringInfo(sql, "SELECT name, conninfo FROM %s",
+					 KEEPER_MANAGE_REL);
+
+	/* Get node information from table */
+	ret = SPI_exec(sql->data, 0);
+
+	if (ret != SPI_OK_SELECT)
+		ereport(ERROR, (errmsg("failed to SELECT the node information from \"%s\"",
+							   KEEPER_MANAGE_REL)));
+
+	num = SPI_processed;
+	tuptable = SPI_tuptable;
+
+	/* Construct currnet list of KeeperNode */
+	for (i = 0; i < num; i++)
+	{
+		HeapTuple tuple = tuptable->vals[i];
+		MemoryContext	oldcxt;
+		KeeperNode 		*kp;
+
+		/* Allocate our results in caller' context, not the transaction's */
+		oldcxt = MemoryContextSwitchTo(resultcxt);
+
+		kp = (KeeperNode *) palloc(sizeof(KeeperNode));
+		kp->name =  pstrdup(SPI_getvalue(tuple, tupdesc, 1));
+		kp->conninfo = pstrdup(SPI_getvalue(tuple, tupdesc, 2));
+
+		res = lappend(res, kp);
+		MemoryContextSwitchTo(oldcxt);
+	}
+
+	relation_close(rel, AccessShareLock);
+
+	SPI_finish();
+	CommitTransactionCommand();
+
+	/* @@@ : Print */
+	{
+		ListCell		*cell;
+
+		foreach(cell, res)
+		{
+			KeeperNode *kp = (KeeperNode *) lfirst(cell);
+
+			elog(WARNING, "list : name = %s, conn = %s",
+				 kp->name, kp->conninfo);
+		}
+	}
+
+	return res;
 }

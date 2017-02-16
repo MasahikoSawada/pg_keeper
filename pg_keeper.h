@@ -20,7 +20,9 @@
 #include "tcop/utility.h"
 #include "libpq-int.h"
 
-#define KEEPER_MANAGE_TABLE "pgkeeper.node_info"
+#define KEEPER_MANAGE_SCHEMA	"pgkeeper"
+#define KEEPER_MANAGE_TABLE		"node_info"
+#define KEEPER_MANAGE_REL		KEEPER_MANAGE_SCHEMA"."KEEPER_MANAGE_TABLE
 
 typedef enum KeeperStatus
 {
@@ -43,6 +45,7 @@ extern void	_PG_init(void);
 extern void	KeeperMain(Datum);
 extern bool	heartbeatServer(const char *conninfo, int r_count);
 extern bool execSQL(const char *conninfo, const char *sql);
+extern List *get_keepernode_list(void);
 extern char *KeeperMaster;
 extern char *KeeperStandby;
 sig_atomic_t got_sighup;
