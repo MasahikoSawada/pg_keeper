@@ -71,7 +71,7 @@ Reporting of building or testing pg_keeper on some platforms are very welcome.
 ### Installation
 pg_keeper needs to be installed into both master server and standby server.
 
-```
+```console
 $ cd pg_keeper
 $ make USE_PGXS=1
 $ su
@@ -81,7 +81,7 @@ $ su
 ### Configration
 For example, we set up two servers; pgserver1 and pgserver2. pgserver1 is the first master server and pgserver2 is the first standby server. We need to install pg_keeper in both servers and configure some parameters as follows.
 
-```
+```console
 $ vi postgresql.conf
 max_worker_processes = 8 # pg_keeper requires one worker on each side
 shared_preload_libraries = 'pg_keeper'
@@ -95,7 +95,7 @@ We should start master server first that pg_keeper is installed in. master serve
 
 After started both master server and slave server, make sure that pg_keeper process is launched successfully in appropriate state on both server.
 
-```
+```console
 -- On master server
 $ tail master.log
 LOG:  pg_keeper connects to standby server
@@ -103,7 +103,7 @@ $ ps x | grep pg_keeper | grep -v grep
 33525 ?        Ss     0:00 postgres: bgworker: pg_keeper   (master mode:connected)
 ```
 
-```
+```console
 -- On standby server
 $ ps x | grep pg_keeper | grep -v grep
 33613 ?        Ss     0:00 postgres: bgworker: pg_keeper   (standby mode:connected)
@@ -112,7 +112,7 @@ $ ps x | grep pg_keeper | grep -v grep
 ### Handling standby server failure (Autmatically changing sync replication to async replication)
 In case the standby server craches, because the master server cannnot replicate data to standby server the following transaction can not be processed. In this case, pg_keeper on the master server changes synchronous replication to asynchronous replication by changing `synchronous_standby_names` GUC parameter after detected the standby server failure.  You can see following server log on the master server.
 
-```
+```console
 $ cat master.log
 <2016-07-20 09:10:09.855 AST> LOG:  could not get tuple from server : "host=pgserver2 port=5432 dbname=postgres"
 <2016-07-20 09:10:09.855 AST> LOG:  pg_keeper failed to execute pooling 1 time(s)
@@ -128,7 +128,7 @@ After the standby server recovered, you need to set `synchronous_standby_names` 
 ### Handling master server failure (Automatically failover)
 In case the master server craches, the standby server needs to promote to new master server. pg_keeper on the standby server promote it after detecting the master server failure. You can see following server log on the standby server.
 
-```
+```console
 $ tail standby.log
 <2016-07-20 09:14:30.622 AST>LOG:  could not get tuple from server : "host=pgserver1 port=5432 dbname=postgres"
 <2016-07-20 09:14:30.622 AST>LOG:  pg_keeper failed to execute pooling 1 time(s)
@@ -148,7 +148,7 @@ $ tail standby.log
 ### Uninstallation
 + Following commands need to be executed in both master server and standby server.
 
-```
+```console
 $ cd pg_keeper
 $ make USE_PGXS=1
 $ su
@@ -157,7 +157,7 @@ $ su
 
 + Remove `pg_keeper` from shared_preload_libraries in postgresql.conf on both servers.
 
-```
+```console
 $ vi postgresql.conf
 shared_preload_libraries = ''
 ```
