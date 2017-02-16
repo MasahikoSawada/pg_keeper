@@ -12,12 +12,12 @@ name            text primary key,
 conninfo        text
 );
 
-CREATE FUNCTION add_node(node_name text, conninfo text)
+CREATE FUNCTION pgkeeper.add_node(node_name text, conninfo text)
 RETURNS bool
 AS 'MODULE_PATHNAME', 'add_node'
 LANGUAGE C STRICT PARALLEL UNSAFE;
 
-CREATE FUNCTION del_node(node_name text)
+CREATE FUNCTION pgkeeper.del_node(node_name text)
 RETURNS bool
 AS 'MODULE_PATHNAME', 'del_node'
 LANGUAGE C STRICT PARALLEL UNSAFE;
