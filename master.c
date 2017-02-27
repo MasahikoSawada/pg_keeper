@@ -31,7 +31,7 @@
 #include "utils/ps_status.h"
 
 
-#define ALTER_SYSTEM_COMMAND "ALTER SYSTEM SET synchronous_standby_names TO '';"
+#define SQL_CHANGE_TO_ASYNC			"ALTER SYSTEM SET synchronous_standby_names TO '';"
 #define STAT_REPLICATION_COMMAND "SELECT * FROM pg_stat_replication WHERE sync_state = 'sync';"
 
 bool	KeeperMainMaster(void);
@@ -49,17 +49,36 @@ char	*keeper_node1_conninfo;
 /* Other variables */
 bool	standby_connected;
 
-/*
- * Set up several parameters for master mode.
- */
+/* Set up several parameters for master mode */
 void
 setupKeeperMaster()
 {
+	int ret;
+
 	/* Set up variable */
 	retry_count = 0;
 
 	/* Set process display which is exposed by ps command */
-	set_ps_display(getStatusPsString(current_status), false);
+	updateStatus(KEEPER_MASTER_READY);
+
+	/*
+	 * There migth be a entry in this server if this server is
+	 * starting up after failover and recovered. So reset it.
+	 */
+	SetCurrentStatementStartTimestamp();
+	StartTransactionCommand();
+	SPI_connect();
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	ret = SPI_exec("ALTER SYSTEM RESET sycnhronous_standby_names;", 0);
+
+	if (ret != SPI_OK_UTILITY)
+		ereport(ERROR,
+				(errmsg("failed to execute ALTER SYSTEM to change to reset")));
+
+	SPI_finish();
+	PopActiveSnapshot();
+	CommitTransactionCommand();
 
 	return;
 }
