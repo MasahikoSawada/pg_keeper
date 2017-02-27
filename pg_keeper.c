@@ -38,20 +38,17 @@ static void checkParameter(void);
 static void swtichMasterAndStandby(void);
 
 /* Function for signal handler */
-static void pg_keeper_sigterm(SIGNAL_ARGS);
-static void pg_keeper_sighup(SIGNAL_ARGS);
+static void pgkeeper_sigterm(SIGNAL_ARGS);
+static void pgkeeper_sighup(SIGNAL_ARGS);
 
 /* flags set by signal handlers */
 sig_atomic_t got_sighup = false;
 sig_atomic_t got_sigterm = false;
 
 /* GUC variables */
-int	keeper_keepalives_time;
-int	keeper_keepalives_count;
-
-/* Pointer to master/standby server connection infromation */
-char *KeeperMaster;
-char *KeeperStandby;
+int	pgkeeper_keepalives_time;
+int	pgkeeper_keepalives_count;
+char *pgkeeper_partner_conninfo;
 
 KeeperStatus current_status;
 
@@ -73,7 +70,7 @@ _PG_init(void)
 	DefineCustomIntVariable("pg_keeper.keepalives_time",
 							"Specific time between polling to primary server",
 							NULL,
-							&keeper_keepalives_time,
+							&pgkeeper_keepalives_time,
 							5,
 							1,
 							INT_MAX,
@@ -86,7 +83,7 @@ _PG_init(void)
 	DefineCustomIntVariable("pg_keeper.keepalives_count",
 							"Specific retry count until promoting standby server",
 							NULL,
-							&keeper_keepalives_count,
+							&pgkeeper_keepalives_count,
 							1,
 							1,
 							INT_MAX,
@@ -110,7 +107,7 @@ _PG_init(void)
 	DefineCustomStringVariable("pg_keeper.node2_conninfo",
 							   "Connection information for node2 server (first standby server)",
 							   NULL,
-							   &keeper_node2_conninfo,
+							   &pgkeeper_partner_conninfo,
 							   NULL,
 							   PGC_POSTMASTER,
 							   0,
@@ -121,7 +118,7 @@ _PG_init(void)
 	DefineCustomStringVariable("pg_keeper.after_command",
 							   "Shell command that will be called after promoted",
 							   NULL,
-							   &keeper_after_command,
+							   &pgkeeper_after_command,
 							   NULL,
 							   PGC_SIGHUP,
 							   GUC_NOT_IN_SAMPLE,
@@ -167,7 +164,7 @@ pg_keeper_sigterm(SIGNAL_ARGS)
  *		our latch to wake it up.
  */
 static void
-pg_keeper_sighup(SIGNAL_ARGS)
+pgkeeper_sighup(SIGNAL_ARGS)
 {
 	got_sighup = true;
 	if (MyProc)
@@ -193,8 +190,8 @@ KeeperMain(Datum main_arg)
 	current_status = RecoveryInProgress() ? KEEPER_STANDBY_READY : KEEPER_MASTER_READY;
 
 	/* Establish signal handlers before unblocking signals */
-	pqsignal(SIGHUP, pg_keeper_sighup);
-	pqsignal(SIGTERM, pg_keeper_sigterm);
+	pqsignal(SIGHUP, pgkeeper_sighup);
+	pqsignal(SIGTERM, pgkeeper_sigterm);
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();

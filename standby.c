@@ -90,7 +90,7 @@ KeeperMainStandby(void)
 		 */
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   keeper_keepalives_time * 1000L);
+					   pgkeeper_keepalives_time * 1000L);
 		ResetLatch(&MyProc->procLatch);
 
 		/* Emergency bailout if postmaster has died */
@@ -117,7 +117,7 @@ KeeperMainStandby(void)
 		 * If retry_count is reached to keeper_keepalives_count,
 		 * do promote the standby server to master server, and exit.
 		 */
-		if (retry_count >= keeper_keepalives_count)
+		if (retry_count >= pgkeeper_keepalives_count)
 		{
 			doPromote();
 
@@ -170,7 +170,7 @@ doAfterCommand(void)
 {
 	int	rc;
 
-	Assert(keeper_after_command);
+	Assert(pgkeeper_after_command);
 
 	ereport(LOG,
 			(errmsg("executing after promoting command \"%s\"",

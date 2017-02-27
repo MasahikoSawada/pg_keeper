@@ -59,11 +59,10 @@ extern bool	KeeperMainStandby(void);
 extern void setupKeeperStandby(void);
 
 /* GUC variables */
-extern int	keeper_keepalives_time;
-extern int	keeper_keepalives_count;
-extern char *keeper_node1_conninfo;
-extern char	*keeper_node2_conninfo;
-extern char *keeper_after_command;
+extern int	pgkeeper_keepalives_time;
+extern int	pgkeeper_keepalives_count;
+extern char *pgkeeper_partner_conninfo;
+extern char *pgkeeper_after_command;
 
 /* Variables for cluster management */
 extern KeeperStatus	current_status;

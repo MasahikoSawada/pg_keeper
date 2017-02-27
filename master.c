@@ -87,7 +87,7 @@ KeeperMainMaster(void)
 		 */
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   keeper_keepalives_time * 1000L);
+					   pgkeeper_keepalives_time * 1000L);
 		ResetLatch(&MyProc->procLatch);
 
 		/* Emergency bailout if postmaster has died */
@@ -124,7 +124,7 @@ KeeperMainMaster(void)
 			 * Pooling to standby server. If heartbeat is failed,
 			 * increment retry_count.
 			 */
-			if (!heartbeatServer(KeeperStandby, retry_count))
+			if (!heartbeatServer(pgkeeper_partner_conninfo, retry_count))
 				retry_count++;
 			else
 				retry_count = 0; /* reset count */
@@ -132,9 +132,9 @@ KeeperMainMaster(void)
 			/*
 			 * Change to asynchronous replication using ALTER SYSTEM
 			 * command iff master server could not connect to standby server
-			 * more than keeper_keepalives_count counts *in a row*.
+			 * more than pgkeeper_keepalives_count counts *in a row*.
 			 */
-			if (retry_count >= keeper_keepalives_count)
+			if (retry_count >= pgkeeper_keepalives_count)
 			{
 				changeToAsync();
 
