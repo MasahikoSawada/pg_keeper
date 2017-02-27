@@ -164,10 +164,20 @@ changeToAsync(void)
 
 	elog(LOG, "pg_keeper changes replication mode to asynchronous replication");
 
-	/* Attempt to execute ALTER SYSTEM command */
-	if (!execSQL(KeeperMaster, ALTER_SYSTEM_COMMAND))
+	SetCurrentStatementStartTimestamp();
+	StartTransactionCommand();
+	SPI_connect();
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	ret = SPI_exec(SQL_CHANGE_TO_ASYNC, 0);
+
+	if (ret != SPI_OK_UTILITY)
 		ereport(ERROR,
 				(errmsg("failed to execute ALTER SYSTEM to change to asynchronous replication")));
+
+	SPI_finish();
+	PopActiveSnapshot();
+	CommitTransactionCommand();
 
 	/* Then, send SIGHUP signal to Postmaster process */
 	if ((ret = kill(PostmasterPid, SIGHUP)) != 0)
