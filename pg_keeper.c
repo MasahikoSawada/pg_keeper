@@ -93,19 +93,8 @@ _PG_init(void)
 							NULL,
 							NULL);
 
-	DefineCustomStringVariable("pg_keeper.node1_conninfo",
-							   "Connection information for node1 server (first master server)",
-							   NULL,
-							   &keeper_node1_conninfo,
-							   NULL,
-							   PGC_POSTMASTER,
-							   0,
-							   NULL,
-							   NULL,
-							   NULL);
-
-	DefineCustomStringVariable("pg_keeper.node2_conninfo",
-							   "Connection information for node2 server (first standby server)",
+	DefineCustomStringVariable("pg_keeper.partner_conninfo",
+							   "Connection information for partner server",
 							   NULL,
 							   &pgkeeper_partner_conninfo,
 							   NULL,
@@ -182,10 +171,6 @@ KeeperMain(Datum main_arg)
 	/* Sanity check */
 	checkParameter();
 
-	/* Initial setting */
-	KeeperMaster = keeper_node1_conninfo;
-	KeeperStandby = keeper_node2_conninfo;
-
 	/* Determine keeper mode of itself */
 	current_status = RecoveryInProgress() ? KEEPER_STANDBY_READY : KEEPER_MASTER_READY;
 
@@ -223,13 +208,9 @@ exec:
 			/* Change mode to master mode */
 			current_status = KEEPER_MASTER_READY;
 
-			/* Switch master and standby connection information */
-			swtichMasterAndStandby();
-
 			ereport(LOG,
 					(errmsg("swtiched master and standby informations"),
-					 errdetail("\"%s\" is regarded as master server, \"%s\" is regarded as standby server",
-							   KeeperMaster, KeeperStandby)));
+					 errdetail("This server is regarded as a master server")));
 
 			goto exec;
 		}
@@ -303,25 +284,11 @@ execSQL(const char *conninfo, const char *sql)
 static void
 checkParameter()
 {
-	if (keeper_node1_conninfo == NULL || keeper_node1_conninfo[0] == '\0')
-		elog(ERROR, "pg_keeper.node1_conninfo must be specified.");
-
-	if (keeper_node2_conninfo == NULL || keeper_node2_conninfo[0] == '\0')
-		elog(ERROR, "pg_keeper.node2_conninfo must be specified.");
+	if (pgkeeper_partner_conninfo == NULL || pgkeeper_partner_conninfo[0] == '\0')
+		elog(ERROR, "pg_keeper.partner_conninfo must be specified.");
 }
 
-/* Switch connection information between master and standby */
-static void
-swtichMasterAndStandby()
-{
-	char *tmp;
-
-	tmp = KeeperMaster;
-	KeeperMaster = KeeperStandby;
-	KeeperStandby = tmp;
-}
-
-char *
+static char *
 getStatusPsString(KeeperStatus status)
 {
 	if (status == KEEPER_STANDBY_READY)
