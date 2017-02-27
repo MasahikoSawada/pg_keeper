@@ -131,9 +131,8 @@ KeeperMainMaster(void)
 			/* Standby connected */
 			if (standby_connected)
 			{
-				current_status = KEEPER_MASTER_CONNECTED;
-				set_ps_display(getStatusPsString(current_status), false);
-				elog(LOG, "pg_keeper connects to standby server");
+				updateStatus(KEEPER_MASTER_CONNECTED);
+				ereport(LOG, (errmsg("pg_keeper connects to standby server")));
 				retry_count = 0;
 			}
 		}
@@ -161,8 +160,7 @@ KeeperMainMaster(void)
 				 * After changing to asynchronou replication, reset
 				 * state of itself and restart pooling.
 				 */
-				current_status = KEEPER_MASTER_ASYNC;
-				set_ps_display(getStatusPsString(current_status), false);
+				updateStatus(KEEPER_MASTER_ASYNC);
 				standby_connected = false;
 			}
 		}

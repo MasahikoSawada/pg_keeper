@@ -20,6 +20,7 @@
 #include "storage/lwlock.h"
 #include "storage/proc.h"
 #include "storage/shmem.h"
+#include "storage/spin.h"
 
 /* these headers are used by this particular worker's code */
 #include "tcop/utility.h"
@@ -35,7 +36,10 @@ bool	heartbeatServer(const char *conninfo, int r_count);
 bool	execSQL(const char *conninfo, const char *sql);
 
 static void checkParameter(void);
-static void swtichMasterAndStandby(void);
+static char *getStatusPsString(KeeperStatus status);
+
+static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
+static void pgkeeper_shmem_startup(void);
 
 /* Function for signal handler */
 static void pgkeeper_sigterm(SIGNAL_ARGS);
@@ -50,7 +54,7 @@ int	pgkeeper_keepalives_time;
 int	pgkeeper_keepalives_count;
 char *pgkeeper_partner_conninfo;
 
-KeeperStatus current_status;
+KeeperShmem	*keeperShmem;
 
 /*
  * Entrypoint of this module.
@@ -115,6 +119,13 @@ _PG_init(void)
 							   NULL,
 							   NULL);
 
+	/* Install hook */
+    prev_shmem_startup_hook = shmem_startup_hook;
+	shmem_startup_hook = pgkeeper_shmem_startup;
+
+	/* request additional sharedresource */
+	RequestAddinShmemSpace(MAXALIGN(sizeof(KeeperShmem)));
+
 	/* set up common data for all our workers */
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -122,6 +133,7 @@ _PG_init(void)
 	worker.bgw_restart_time = BGW_NEVER_RESTART;
 	worker.bgw_main = KeeperMain;
 	worker.bgw_notify_pid = 0;
+
 	/*
 	 * Now fill in worker-specific data, and do the actual registrations.
 	 */
@@ -130,13 +142,40 @@ _PG_init(void)
 	RegisterBackgroundWorker(&worker);
 }
 
+void _PG_fini(void)
+{
+	/* Uninstall hook */
+    shmem_startup_hook = prev_shmem_startup_hook;
+}
+
+static void
+pgkeeper_shmem_startup(void)
+{
+	bool found;
+
+	if (prev_shmem_startup_hook)
+		prev_shmem_startup_hook();
+
+	keeperShmem = NULL;
+
+	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
+	keeperShmem = ShmemInitStruct("pg_keeper",
+								  sizeof(KeeperShmem),
+								  &found);
+
+	if (!found)
+		SpinLockInit(&keeperShmem->mutex);
+
+	LWLockRelease(AddinShmemInitLock);
+}
+
 /*
  * Signal handler for SIGTERM
  *		Set a flag to let the main loop to terminate, and set our latch to wake
  *		it up.
  */
 static void
-pg_keeper_sigterm(SIGNAL_ARGS)
+pgkeeper_sigterm(SIGNAL_ARGS)
 {
 	int			save_errno = errno;
 
@@ -303,4 +342,16 @@ getStatusPsString(KeeperStatus status)
 		return "(master:connected)";
 	else /* status == KEEPER_MASTER_ASYNC) */
 		return "(master:async)";
+}
+
+void
+updateStatus(KeeperStatus status)
+{
+	/* Update statuc in shmem */
+	SpinLockAcquire(&keeperShmem->mutex);
+	keeperShmem->current_status = status;
+	SpinLockRelease(&keeperShmem->mutex);
+
+	/* Then, update process title */
+	set_ps_display(getStatusPsString(status), false);
 }

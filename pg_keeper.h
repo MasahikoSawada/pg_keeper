@@ -38,17 +38,25 @@ typedef struct KeeperNode
 	bool is_sync;
 } KeeperNode;
 
+typedef struct KeeperShmem
+{
+	KeeperStatus current_status;
+	slock_t		mutex;
+} KeeperShmem;
+
 /* pg_keeper.c */
 extern void	_PG_init(void);
+extern void _PG_fini(void);
 extern void	KeeperMain(Datum);
 extern bool	heartbeatServer(const char *conninfo, int r_count);
 extern bool execSQL(const char *conninfo, const char *sql);
 extern char *KeeperMaster;
 extern char *KeeperStandby;
+extern KeeperShmem	*keeperShmem;
 sig_atomic_t got_sighup;
 sig_atomic_t got_sigterm;
 
-extern char *getStatusPsString(KeeperStatus status);
+extern void updateStatus(KeeperStatus status);
 
 /* master.c */
 extern bool KeeperMainMaster(void);
