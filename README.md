@@ -35,12 +35,14 @@ Note that the paramteres with (*) are mandatory options.
 
 - pg_keeper.partner_conninfo(*)
 
-  - Specifies a connection string to be used for pg_keeper to connect to the parter node.
+  - Specifies a connection string to be used for heart-beat to the parter node.
+  - The heart-beat LAN is better to be separated from replication LAN.
+  - Also, the NIC for heart-beat LAN is better to use NIC bonding.
 
 - pg_keeper.my_conninfo(*)
 
   - Specifies a connection string to be used for pg_keeper to do `ALTER SYSTEM` on myself.
-
+  
 - pg_keeper.keepalive_time (sec)
 
   - Specifies how long interval pg_keeper continues polling. 5 seconds by default.
@@ -78,30 +80,39 @@ $ su
 ```
 
 ### Configration
-For example, we set up two servers; pgserver1 and pgserver2. pgserver1 is the first master server and pgserver2 is the first standby server. We need to install pg_keeper in both servers and configure some parameters as follows.
+For example, we set up two servers; pgserver1 and pgserver2. pgserver1 is the first master server and pgserver2 is the first standby server. After created user for replication and set up authentication, we need to install pg_keeper in both servers and configure some parameters as follows.
 
 ```console
-$ vi postgresql.conf
-# on pgserver1 (first master server)
+-- on pgserver1 (first master server)
+$ vi $PGDATA/postgresql.conf
+wal_level = hot_standby
 max_worker_processes = 8 # pg_keeper requires one worker on each side
+max_wal_senders = 8 # must be more than 1
 hot_standby = on
 shared_preload_libraries = 'pg_keeper'
+synchronous_standby_names = 'pgserver2' # must use synchronous replication.
 pg_keeper.keepalive_time = 5
 pg_keeper.keepalive_count = 3
-pg_keeper.mu_conninfo = 'host=pgserver1 port=5432 dbname=postgres'
+pg_keeper.my_conninfo = 'host=127.0.0.1 port=5432 dbname=postgres'
 pg_keeper.partner_conninfo = 'host=pgserver2 port=5432 dbname=postgres'
 ```
 
 ```console
-$ vi postgresql.conf
-# on pgserver2 (first slave server)
+-- on pgserver2 (first slave server)
+$ vi $PGDATA/postgresql.conf
+wal_level = hot_standby
 max_worker_processes = 8 # pg_keeper requires one worker on each side
+max_wal_senders = 8 # must be more than 1
 hot_standby = on
 shared_preload_libraries = 'pg_keeper'
 pg_keeper.keepalive_time = 5
 pg_keeper.keepalive_count = 3
-pg_keeper.my_conninfo = 'host=pgserver2 port=5432 dbname=postgres'
+pg_keeper.my_conninfo = 'host=127.0.0.1 port=5432 dbname=postgres'
 pg_keeper.partner_conninfo = 'host=pgserver1 port=5432 dbname=postgres'
+$ vi $PGDATA/recovery.conf
+standby_mode = 'on'
+recovery_target_timeline = latest
+primary_conninfo = 'host=pgserver1 port=5432 user=repl_user application_name=pgserver2'
 ```
 
 ### Starting servers
