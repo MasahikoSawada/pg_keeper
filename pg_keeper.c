@@ -260,10 +260,6 @@ exec:
 			/* Change mode to master mode */
 			updateStatus(KEEPER_MASTER_READY);
 
-			ereport(LOG,
-					(errmsg("swtiched master and standby informations"),
-					 errdetail("This server is regarded as a master server")));
-
 			goto exec;
 		}
 	}
@@ -336,12 +332,14 @@ execSQL(const char *conninfo, const char *sql)
 static void
 checkParameter()
 {
+	if (!EnableHotStandby)
+		ereport(ERROR, (errmsg("hot_standby must be enabled.")));
+
 	if (pgkeeper_partner_conninfo == NULL || pgkeeper_partner_conninfo[0] == '\0')
-		elog(ERROR, "pg_keeper.partner_conninfo must be specified.");
+		ereport(ERROR, (errmsg("pg_keeper.partner_conninfo must be specified.")));
 
 	if (pgkeeper_my_conninfo == NULL || pgkeeper_my_conninfo[0] == '\0')
-		elog(ERROR, "pg_keeper.my_conninfo must be specified.");
-
+		ereport(ERROR, (errmsg("pg_keeper.my_conninfo must be specified.")));
 }
 
 static char *

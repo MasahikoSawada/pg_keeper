@@ -151,13 +151,13 @@ doPromote(void)
 		ereport(ERROR,
 				(errmsg("could not close promote file: \"%s\"", trigger_filepath)));
 
-	elog(LOG,"promote standby server to primary server");
-
 	/* Do promote */
 	if (kill(PostmasterPid, SIGUSR1) != 0)
 		ereport(ERROR,
 				(errmsg("failed to send SIGUSR1 signal to postmaster process : %d",
 						PostmasterPid)));
+	ereport(LOG,
+			(errmsg("pg_keeper promoted standby server to primary server")));
 }
 
 /*
