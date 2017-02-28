@@ -33,22 +33,21 @@ With this, fail over time can be calculated with this formula.
 ## GUC paramters
 Note that the paramteres with (*) are mandatory options.
 
-- pg_keeper.node1_conninfo(*)
+- pg_keeper.partner_conninfo(*)
 
-  - Specifies a connection string to be used for pg_keeper to connect to the first master - which is used by standby mode server.
-  - It should be the same as the primary_conninfo in recovery.conf on first standby server.
+  - Specifies a connection string to be used for pg_keeper to connect to the parter node.
 
-- pg_keeper.node2_conninfo(*)
+- pg_keeper.my_conninfo(*)
 
-  - Specifies a connection string to be used for pg_keeper to connect to the first standby- which is used by master mode server.
+  - Specifies a connection string to be used for pg_keeper to do `ALTER SYSTEM` on myself.
 
 - pg_keeper.keepalive_time (sec)
 
-  - Specifies how long interval pg_keeper continues polling. 5 second by default.
+  - Specifies how long interval pg_keeper continues polling. 5 seconds by default.
 
 - pg_keeper.keepalive_count
 
-  - Specifies how many times pg_keeper try polling to master server in ordre to promote standby server. 1 time by default.
+  - Specifies how many times pg_keeper try polling to master server in ordre to promote standby server. 4 times by default.
 
 - pg_keeper.after_command
 
@@ -84,11 +83,12 @@ For example, we set up two servers; pgserver1 and pgserver2. pgserver1 is the fi
 ```console
 $ vi postgresql.conf
 max_worker_processes = 8 # pg_keeper requires one worker on each side
+hot_standby = on
 shared_preload_libraries = 'pg_keeper'
 pg_keeper.keepalive_time = 5
 pg_keeper.keepalive_count = 3
-pg_keeper.node1_conninfo = 'host=pgserver1 port=5432 dbname=postgres'
-pg_keeper.node2_conninfo = 'host=pgserver2 port=5432 dbname=postgres'
+pg_keeper.partner_conninfo = 'host=pgserver1 port=5432 dbname=postgres'
+pg_keeper.my_conninfo = 'host=pgserver2 port=5432 dbname=postgres'
 ```
 ### Starting servers
 We should start master server first that pg_keeper is installed in. master server's pg_keeper process will be launched when master server got started, once pg_keeper in standby server connected master's pg_keeper process it will start to work.
@@ -115,9 +115,9 @@ In case the standby server craches, because the master server cannnot replicate 
 ```console
 $ cat master.log
 <2016-07-20 09:10:09.855 AST> LOG:  could not get tuple from server : "host=pgserver2 port=5432 dbname=postgres"
-<2016-07-20 09:10:09.855 AST> LOG:  pg_keeper failed to execute pooling 1 time(s)
+<2016-07-20 09:10:09.855 AST> LOG:  pg_keeper failed to connect 1 time(s)
 <2016-07-20 09:10:14.859 AST> LOG:  could not get tuple from server : "host=pgserver2 port=5432 dbname=postgres"
-<2016-07-20 09:10:14.859 AST> LOG:  pg_keeper failed to execute pooling 2 time(s)
+<2016-07-20 09:10:14.859 AST> LOG:  pg_keeper failed to connect 2 time(s)
 <2016-07-20 09:10:24.867 AST> LOG:  pg_keeper changes replication mode to asynchronous replication
 <2016-07-20 09:10:24.884 AST> LOG:  received SIGHUP, reloading configuration files
 <2016-07-20 09:10:24.885 AST> LOG:  parameter "synchronous_standby_names" changed to ""
@@ -131,12 +131,10 @@ In case the master server craches, the standby server needs to promote to new ma
 ```console
 $ tail standby.log
 <2016-07-20 09:14:30.622 AST>LOG:  could not get tuple from server : "host=pgserver1 port=5432 dbname=postgres"
-<2016-07-20 09:14:30.622 AST>LOG:  pg_keeper failed to execute pooling 1 time(s)
+<2016-07-20 09:14:30.622 AST>LOG:  pg_keeper failed to connect 1 time(s)
 <2016-07-20 09:14:35.628 AST>LOG:  could not get tuple from server : "host=pgserver1 port=5432 dbname=postgres"
-<2016-07-20 09:14:35.628 AST>LOG:  pg_keeper failed to execute pooling 2 time(s)
-<2016-07-20 09:14:45.641 AST>LOG:  promote standby server to primary server
-<2016-07-20 09:14:45.641 AST>LOG:  swtiched master and standby informations
-<2016-07-20 09:14:45.641 AST>DETAIL:  "port=5551 dbname=postgres" is regarded as master server, "port=5550 dbname=postgres" is regarded as standby server
+<2016-07-20 09:14:35.628 AST>LOG:  pg_keeper failed to connect 2 time(s)
+<2016-07-20 09:14:45.641 AST>LOG:  pg_keeper promoted standby server to primary server
 <2016-07-20 09:14:45.641 AST>LOG:  received promote request
 <2016-07-20 09:14:45.641 AST>LOG:  redo done at 0/3000060
 <2016-07-20 09:14:45.646 AST>LOG:  selected new timeline ID: 2
