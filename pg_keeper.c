@@ -90,7 +90,7 @@ _PG_init(void)
 							"Specific retry count until promoting standby server",
 							NULL,
 							&pgkeeper_keepalives_count,
-							1,
+							4,
 							1,
 							INT_MAX,
 							PGC_SIGHUP,
