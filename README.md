@@ -82,14 +82,28 @@ For example, we set up two servers; pgserver1 and pgserver2. pgserver1 is the fi
 
 ```console
 $ vi postgresql.conf
+# on pgserver1 (first master server)
 max_worker_processes = 8 # pg_keeper requires one worker on each side
 hot_standby = on
 shared_preload_libraries = 'pg_keeper'
 pg_keeper.keepalive_time = 5
 pg_keeper.keepalive_count = 3
-pg_keeper.partner_conninfo = 'host=pgserver1 port=5432 dbname=postgres'
-pg_keeper.my_conninfo = 'host=pgserver2 port=5432 dbname=postgres'
+pg_keeper.mu_conninfo = 'host=pgserver1 port=5432 dbname=postgres'
+pg_keeper.partner_conninfo = 'host=pgserver2 port=5432 dbname=postgres'
 ```
+
+```console
+$ vi postgresql.conf
+# on pgserver2 (first slave server)
+max_worker_processes = 8 # pg_keeper requires one worker on each side
+hot_standby = on
+shared_preload_libraries = 'pg_keeper'
+pg_keeper.keepalive_time = 5
+pg_keeper.keepalive_count = 3
+pg_keeper.my_conninfo = 'host=pgserver2 port=5432 dbname=postgres'
+pg_keeper.partner_conninfo = 'host=pgserver1 port=5432 dbname=postgres'
+```
+
 ### Starting servers
 We should start master server first that pg_keeper is installed in. master server's pg_keeper process will be launched when master server got started, once pg_keeper in standby server connected master's pg_keeper process it will start to work.
 
