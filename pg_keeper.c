@@ -15,6 +15,7 @@
 #include "access/xlog.h"
 #include "miscadmin.h"
 #include "postmaster/bgworker.h"
+#include "replication/syncrep.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
 #include "storage/lwlock.h"
@@ -177,7 +178,10 @@ pgkeeper_shmem_startup(void)
 								  &found);
 
 	if (!found)
+	{
 		SpinLockInit(&keeperShmem->mutex);
+		keeperShmem->sync_mode = false;
+	}
 
 	LWLockRelease(AddinShmemInitLock);
 }
@@ -340,6 +344,13 @@ checkParameter()
 
 	if (pgkeeper_my_conninfo == NULL || pgkeeper_my_conninfo[0] == '\0')
 		ereport(ERROR, (errmsg("pg_keeper.my_conninfo must be specified.")));
+
+	if (SyncRepStandbyNames != NULL && SyncRepStandbyNames[0] != '\0')
+	{
+		SpinLockAcquire(&keeperShmem->mutex);
+		keeperShmem->sync_mode = true;
+		SpinLockRelease(&keeperShmem->mutex);
+	}
 }
 
 static char *
@@ -354,7 +365,12 @@ getStatusPsString(KeeperStatus status)
 	else if (status == KEEPER_MASTER_READY)
 		return "(master:ready)";
 	else if (status == KEEPER_MASTER_CONNECTED)
-		return "(master:connected)";
+	{
+		if (keeperShmem->sync_mode)
+			return "(master:connected)";
+		else
+			return "(master:async:connected)";
+	}
 	else /* status == KEEPER_MASTER_ASYNC) */
 		return "(master:async)";
 }

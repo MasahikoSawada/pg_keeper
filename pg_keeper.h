@@ -41,7 +41,8 @@ typedef struct KeeperNode
 typedef struct KeeperShmem
 {
 	KeeperStatus current_status;
-	slock_t		mutex;
+	slock_t		mutex;	/* mutex for editing data on shmem */
+	bool		sync_mode;	/* we are using synchronous replication? */
 } KeeperShmem;
 
 /* pg_keeper.c */

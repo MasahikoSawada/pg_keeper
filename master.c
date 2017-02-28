@@ -32,7 +32,6 @@
 
 
 #define SQL_CHANGE_TO_ASYNC			"ALTER SYSTEM SET synchronous_standby_names TO '';"
-#define STAT_REPLICATION_COMMAND "SELECT * FROM pg_stat_replication WHERE sync_state = 'sync';"
 
 bool	KeeperMainMaster(void);
 void	setupKeeperMaster(void);
@@ -141,7 +140,8 @@ KeeperMainMaster(void)
 			 */
 			if (retry_count >= pgkeeper_keepalives_count)
 			{
-				changeToAsync();
+				if (keeperShmem->sync_mode)
+					changeToAsync();
 
 				/*
 				 * After changing to asynchronou replication, reset
@@ -186,19 +186,24 @@ checkStandbyIsConnected()
 {
 	int ret;
 	bool found;
+	StringInfo sql = makeStringInfo();
+
+	appendStringInfo(sql, "SELECT * FROM pg_stat_replication");
+	if (keeperShmem->sync_mode)
+		appendStringInfo(sql, " WHERE sync_state = 'sync'");
 
 	SetCurrentStatementStartTimestamp();
 	StartTransactionCommand();
 	SPI_connect();
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	ret = SPI_exec(STAT_REPLICATION_COMMAND, 0);
+	ret = SPI_exec(sql->data, 0);
 
 	if (ret != SPI_OK_SELECT)
 		ereport(ERROR,
 				(errmsg("failed to execute SELECT to confirm connecting standby server")));
 
-	found = SPI_processed >= 1;
+	found = SPI_processed == 1;
 
 	SPI_finish();
 	PopActiveSnapshot();
