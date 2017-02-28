@@ -159,14 +159,14 @@ $ tail standby.log
 <2016-07-20 09:14:45.693 AST>LOG:  database system is ready to accept connections
 ```
 
-## <a name="state_transition"> State Transition of pg_keeper
+## <a name="state_transition"> State Transition
 |state|description|
 |:---:|:---------:|
-|(standby:ready)|Waiting for being able to connect to the master server.|
-|(standby:connected)|Connected to the master server. Heartbeating.|
-|(master:ready)|Wait for replication connection from standby server.|
-|(master:connected)|Connected from the standby server. Hearbeating.|
-|(master:async)|The master server is running as async replication mode.|
+|**(standby:ready)**|Waiting for being able to connect to the master server.|
+|**(standby:connected)**|Connected to the master server. Heartbeating.|
+|**(master:ready)**|Wait for replication connection from standby server.|
+|**(master:connected)**|Connected from the standby server. Hearbeating.|
+|**(master:async)**|The master server is running as async replication mode.|
 
 ## Uninstallation
 + Following commands need to be executed in both master server and standby server.
