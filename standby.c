@@ -35,8 +35,7 @@ static void doPromote(void);
 static void doAfterCommand(void);
 
 /* GUC variables */
-char	*keeper_node2_conninfo;
-char	*keeper_after_command;
+char	*pgkeeper_after_command;
 
 /* Variables for heartbeat */
 static int retry_count;
@@ -53,10 +52,10 @@ setupKeeperStandby()
 	retry_count = 0;
 
 	/* Connection confirm */
-	if(!(con = PQconnectdb(KeeperMaster)))
+	if(!(con = PQconnectdb(pgkeeper_partner_conninfo)))
 		ereport(ERROR,
 				(errmsg("could not establish connection to primary server : %s",
-						KeeperMaster)));
+						pgkeeper_partner_conninfo)));
 
 	PQfinish(con);
 
@@ -105,9 +104,9 @@ KeeperMainStandby(void)
 
 		/*
 		 * Pooling to master server. If heartbeat is failed,
-		 * increment retry_count..
+		 * increment retry_count.
 		 */
-		if (!heartbeatServer(KeeperMaster, retry_count))
+		if (!heartbeatServer(pgkeeper_partner_conninfo, retry_count))
 			retry_count++;
 		else
 			retry_count = 0; /* reset count */
@@ -121,7 +120,7 @@ KeeperMainStandby(void)
 			doPromote();
 
 			/* If after command is given, execute it */
-			if (keeper_after_command)
+			if (pgkeeper_after_command)
 				doAfterCommand();
 
 			return true;
@@ -173,15 +172,15 @@ doAfterCommand(void)
 
 	ereport(LOG,
 			(errmsg("executing after promoting command \"%s\"",
-					keeper_after_command)));
+					pgkeeper_after_command)));
 
-	rc = system(keeper_after_command);
+	rc = system(pgkeeper_after_command);
 
 	if (rc != 0)
 	{
 		ereport(LOG,
 				(errmsg("failed to execute after promoting command \"%s\"",
-						keeper_after_command)));
+						pgkeeper_after_command)));
 	}
 }
 

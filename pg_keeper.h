@@ -70,7 +70,5 @@ extern void setupKeeperStandby(void);
 extern int	pgkeeper_keepalives_time;
 extern int	pgkeeper_keepalives_count;
 extern char *pgkeeper_partner_conninfo;
+extern char *pgkeeper_my_conninfo;
 extern char *pgkeeper_after_command;
-
-/* Variables for cluster management */
-extern KeeperStatus	current_status;

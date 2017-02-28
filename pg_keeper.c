@@ -21,6 +21,7 @@
 #include "storage/proc.h"
 #include "storage/shmem.h"
 #include "storage/spin.h"
+#include "utils/ps_status.h"
 
 /* these headers are used by this particular worker's code */
 #include "tcop/utility.h"
@@ -53,6 +54,7 @@ sig_atomic_t got_sigterm = false;
 int	pgkeeper_keepalives_time;
 int	pgkeeper_keepalives_count;
 char *pgkeeper_partner_conninfo;
+char *pgkeeper_my_conninfo;
 
 KeeperShmem	*keeperShmem;
 
@@ -101,6 +103,17 @@ _PG_init(void)
 							   "Connection information for partner server",
 							   NULL,
 							   &pgkeeper_partner_conninfo,
+							   NULL,
+							   PGC_POSTMASTER,
+							   0,
+							   NULL,
+							   NULL,
+							   NULL);
+
+	DefineCustomStringVariable("pg_keeper.my_conninfo",
+							   "My connection information used for ALTER SYSTEM",
+							   NULL,
+							   &pgkeeper_my_conninfo,
 							   NULL,
 							   PGC_POSTMASTER,
 							   0,
@@ -211,7 +224,7 @@ KeeperMain(Datum main_arg)
 	checkParameter();
 
 	/* Determine keeper mode of itself */
-	current_status = RecoveryInProgress() ? KEEPER_STANDBY_READY : KEEPER_MASTER_READY;
+	updateStatus(RecoveryInProgress() ? KEEPER_STANDBY_READY : KEEPER_MASTER_READY);
 
 	/* Establish signal handlers before unblocking signals */
 	pqsignal(SIGHUP, pgkeeper_sighup);
@@ -225,13 +238,13 @@ KeeperMain(Datum main_arg)
 
 exec:
 
-	if (current_status == KEEPER_MASTER_READY)
+	if (keeperShmem->current_status == KEEPER_MASTER_READY)
 	{
 		/* Routine for master_mode */
 		setupKeeperMaster();
 		ret = KeeperMainMaster();
 	}
-	else if (current_status == KEEPER_STANDBY_READY)
+	else if (keeperShmem->current_status == KEEPER_STANDBY_READY)
 	{
 		/* Routine for standby_mode */
 		setupKeeperStandby();
@@ -245,7 +258,7 @@ exec:
 		if (ret)
 		{
 			/* Change mode to master mode */
-			current_status = KEEPER_MASTER_READY;
+			updateStatus(KEEPER_MASTER_READY);
 
 			ereport(LOG,
 					(errmsg("swtiched master and standby informations"),
@@ -255,7 +268,7 @@ exec:
 		}
 	}
 	else
-		ereport(ERROR, (errmsg("invalid keeper mode : \"%d\"", current_status)));
+		ereport(ERROR, (errmsg("invalid keeper mode : \"%d\"", keeperShmem->current_status)));
 
 	proc_exit(ret);
 }
@@ -325,6 +338,10 @@ checkParameter()
 {
 	if (pgkeeper_partner_conninfo == NULL || pgkeeper_partner_conninfo[0] == '\0')
 		elog(ERROR, "pg_keeper.partner_conninfo must be specified.");
+
+	if (pgkeeper_my_conninfo == NULL || pgkeeper_my_conninfo[0] == '\0')
+		elog(ERROR, "pg_keeper.my_conninfo must be specified.");
+
 }
 
 static char *

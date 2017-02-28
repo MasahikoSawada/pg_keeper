@@ -53,8 +53,6 @@ bool	standby_connected;
 void
 setupKeeperMaster()
 {
-	int ret;
-
 	/* Set up variable */
 	retry_count = 0;
 
@@ -65,20 +63,9 @@ setupKeeperMaster()
 	 * There migth be a entry in this server if this server is
 	 * starting up after failover and recovered. So reset it.
 	 */
-	SetCurrentStatementStartTimestamp();
-	StartTransactionCommand();
-	SPI_connect();
-	PushActiveSnapshot(GetTransactionSnapshot());
-
-	ret = SPI_exec("ALTER SYSTEM RESET sycnhronous_standby_names;", 0);
-
-	if (ret != SPI_OK_UTILITY)
+	if (!execSQL(pgkeeper_my_conninfo, "ALTER SYSTEM RESET synchronous_standby_names"))
 		ereport(ERROR,
 				(errmsg("failed to execute ALTER SYSTEM to change to reset")));
-
-	SPI_finish();
-	PopActiveSnapshot();
-	CommitTransactionCommand();
 
 	return;
 }
@@ -172,7 +159,6 @@ KeeperMainMaster(void)
 /*
  * Change synchronous replication to *asynchronous* replication
  * using by ALTER SYSTEM command up to 5 times.
- * XXX : Could we execute this via SPI instead?
  */
 static void
 changeToAsync(void)
@@ -181,20 +167,9 @@ changeToAsync(void)
 
 	elog(LOG, "pg_keeper changes replication mode to asynchronous replication");
 
-	SetCurrentStatementStartTimestamp();
-	StartTransactionCommand();
-	SPI_connect();
-	PushActiveSnapshot(GetTransactionSnapshot());
-
-	ret = SPI_exec(SQL_CHANGE_TO_ASYNC, 0);
-
-	if (ret != SPI_OK_UTILITY)
+	if (!execSQL(pgkeeper_my_conninfo, SQL_CHANGE_TO_ASYNC))
 		ereport(ERROR,
 				(errmsg("failed to execute ALTER SYSTEM to change to asynchronous replication")));
-
-	SPI_finish();
-	PopActiveSnapshot();
-	CommitTransactionCommand();
 
 	/* Then, send SIGHUP signal to Postmaster process */
 	if ((ret = kill(PostmasterPid, SIGHUP)) != 0)
