@@ -66,7 +66,8 @@ setupKeeperStandby()
 }
 
 /*
- * Main routine for standby mode.
+ * Main routine for standby mode. Returning true means that
+ * this standby can be promoted later.
  */
 bool
 KeeperMainStandby(void)
@@ -127,7 +128,7 @@ KeeperMainStandby(void)
 		}
 	}
 
-	return true;
+	return false;
 }
 
 /*

@@ -177,7 +177,6 @@ $ tail standby.log
 |**(standby:connected)**|Connected to the master server. Heartbeating.|
 |**(master:ready)**|Wait for replication connection from standby server.|
 |**(master:connected)**|Connected from the standby server. Hearbeating.|
-|**(master:async:connected)**|Connected from the standby server using asynchronous replication. Hearbeating.|
 |**(master:async)**|The master server is running as async replication mode.|
 
 ## Uninstallation

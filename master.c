@@ -16,11 +16,13 @@
 #include "executor/spi.h"
 #include "miscadmin.h"
 #include "postmaster/bgworker.h"
+#include "replication/syncrep.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
 #include "storage/lwlock.h"
 #include "storage/proc.h"
 #include "storage/shmem.h"
+#include "storage/spin.h"
 
 /* these headers are used by this particular worker's code */
 #include "access/xact.h"
@@ -104,6 +106,13 @@ KeeperMainMaster(void)
 		{
 			got_sighup = false;
 			ProcessConfigFile(PGC_SIGHUP);
+
+			if (SyncRepStandbyNames != NULL && SyncRepStandbyNames[0] != '\0')
+			{
+				SpinLockAcquire(&keeperShmem->mutex);
+				keeperShmem->sync_mode = true;
+				SpinLockRelease(&keeperShmem->mutex);
+			}
 		}
 
 		/*
@@ -117,12 +126,16 @@ KeeperMainMaster(void)
 			/* Standby connected */
 			if (standby_connected)
 			{
-				updateStatus(KEEPER_MASTER_CONNECTED);
+				if (keeperShmem->sync_mode)
+					updateStatus(KEEPER_MASTER_CONNECTED);
+				else
+					updateStatus(KEEPER_MASTER_ASYNC);
+
 				ereport(LOG, (errmsg("pg_keeper connects to standby server")));
 				retry_count = 0;
 			}
 		}
-		else
+		if (keeperShmem->sync_mode)
 		{
 			/*
 			 * Pooling to standby server. If heartbeat is failed,
@@ -140,8 +153,7 @@ KeeperMainMaster(void)
 			 */
 			if (retry_count >= pgkeeper_keepalives_count)
 			{
-				if (keeperShmem->sync_mode)
-					changeToAsync();
+				changeToAsync();
 
 				/*
 				 * After changing to asynchronou replication, reset
@@ -151,6 +163,7 @@ KeeperMainMaster(void)
 				standby_connected = false;
 			}
 		}
+		/* nothing to do if in async mode */
 	}
 
 	return true;

@@ -365,14 +365,11 @@ getStatusPsString(KeeperStatus status)
 	else if (status == KEEPER_MASTER_READY)
 		return "(master:ready)";
 	else if (status == KEEPER_MASTER_CONNECTED)
-	{
-		if (keeperShmem->sync_mode)
-			return "(master:connected)";
-		else
-			return "(master:async:connected)";
-	}
-	else /* status == KEEPER_MASTER_ASYNC) */
+		return "(master:connected)";
+	else if (status == KEEPER_MASTER_ASYNC)
 		return "(master:async)";
+	else
+		ereport(ERROR, (errmsg("Invalid status %d", status)));
 }
 
 void
