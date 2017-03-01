@@ -107,11 +107,37 @@ KeeperMainMaster(void)
 			got_sighup = false;
 			ProcessConfigFile(PGC_SIGHUP);
 
-			if (SyncRepStandbyNames != NULL && SyncRepStandbyNames[0] != '\0')
+			/*
+			 * If we change async mode to sync mode , always reset standby_connected.
+			 * Also if we change sync mode to async mode, reset it.
+			 */
+			if (!keeperShmem->sync_mode &&
+				SyncRepStandbyNames != NULL && SyncRepStandbyNames[0] != '\0')
 			{
+				/*
+				 * If we are not in synchronous mode and synchronous_standby_names
+				 * has been set after reloading, we change state to synchronous mode
+				 */
 				SpinLockAcquire(&keeperShmem->mutex);
 				keeperShmem->sync_mode = true;
 				SpinLockRelease(&keeperShmem->mutex);
+
+				ereport(LOG, (errmsg("pg_keeper changed to synchronous mode")));
+				standby_connected = false;
+			}
+			else if (keeperShmem->sync_mode &&
+					 (SyncRepStandbyNames == NULL || SyncRepStandbyNames[0] == '\0'))
+			{
+				/*
+				 * If we are in synchronous mode and synchronous_standby_names
+				 * has been reset after reloading, we change state to synchronous mode
+				 */
+				SpinLockAcquire(&keeperShmem->mutex);
+				keeperShmem->sync_mode = false;
+				SpinLockRelease(&keeperShmem->mutex);
+
+				ereport(LOG, (errmsg("pg_keeper changed to asynchronous mode")));
+				standby_connected = false;
 			}
 		}
 
@@ -123,7 +149,11 @@ KeeperMainMaster(void)
 		{
 			standby_connected = checkStandbyIsConnected();
 
-			/* Standby connected */
+			/*
+			 * Standby connected, but we're not sure connected
+			 * standby is either sync standby or async standby.
+			 * So update status based on current sync mode.
+			 */
 			if (standby_connected)
 			{
 				if (keeperShmem->sync_mode)
@@ -131,11 +161,11 @@ KeeperMainMaster(void)
 				else
 					updateStatus(KEEPER_MASTER_ASYNC);
 
-				ereport(LOG, (errmsg("pg_keeper connects to standby server")));
+				ereport(LOG, (errmsg("the standby server connected to the master server")));
 				retry_count = 0;
 			}
 		}
-		if (keeperShmem->sync_mode)
+		else if (keeperShmem->sync_mode)
 		{
 			/*
 			 * Pooling to standby server. If heartbeat is failed,
@@ -166,7 +196,7 @@ KeeperMainMaster(void)
 		/* nothing to do if in async mode */
 	}
 
-	return true;
+	return false;
 }
 
 /*
@@ -191,7 +221,7 @@ changeToAsync(void)
 }
 
 /*
- * Check if synchronous standby server has conncted to master server
+ * Check if the standby server has conncted to master server
  * through checking pg_stat_replication system view via SPI.
  */
 static bool
@@ -215,6 +245,12 @@ checkStandbyIsConnected()
 	if (ret != SPI_OK_SELECT)
 		ereport(ERROR,
 				(errmsg("failed to execute SELECT to confirm connecting standby server")));
+
+	/* We expect to detect only one standby server */
+	if (SPI_processed > 1)
+		ereport(WARNING,
+				(errmsg("pg_keeper only support one standby server, but detected %d standbys",
+					SPI_processed)));
 
 	found = SPI_processed == 1;
 
