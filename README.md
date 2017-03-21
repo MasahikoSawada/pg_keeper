@@ -16,12 +16,12 @@ The pg_keeper mode is determined automatially by itself.
 - master mode
 
 master mode of pg_keeper queries the standby server at fixed intervals using a simple query 'SELECT 1'.
-If pg_keeper fails to get any result after a certain number of tries, pg_keeper will change replication mode to asynchronous replcation so that backend process can avoid to wait infinity.
+If pg_keeper fails to get any result after a certain number of tries, pg_keeper will change replication mode to asynchronous replication so that backend process can avoid to wait infinity.
 
 - standby mode
 
 standby mode of pg_keeper queries the primary server at fixed intervals using a simple query 'SELECT 1'.
-If pg_keeper fails to get any result after a certain number of tries, pg_keeper will promote the standby it runs on to mastet.
+If pg_keeper fails to get any result after a certain number of tries, pg_keeper will promote the standby it runs on to master.
 After promoting to master server, pg_keeper switches from standby mode to master mode automatically.
 
 With this, fail over time can be calculated with this formula.
@@ -30,12 +30,12 @@ With this, fail over time can be calculated with this formula.
 (F/O time) = pg_keeper.keepalives_time * pg_keeper.keepalives_count
 ```
 
-## GUC paramters
-Note that the paramteres with (*) are mandatory options.
+## GUC parameters
+Note that the parameters with (*) are mandatory options.
 
 - pg_keeper.partner_conninfo(*)
 
-  - Specifies a connection string to be used for heart-beat to the parter node.
+  - Specifies a connection string to be used for heart-beat to the partner node.
   - The heart-beat LAN is better to be separated from replication LAN.
   - Also, the NIC for heart-beat LAN is better to use NIC bonding.
 
@@ -49,7 +49,7 @@ Note that the paramteres with (*) are mandatory options.
 
 - pg_keeper.keepalive_count
 
-  - Specifies how many times pg_keeper try polling to master server in ordre to promote standby server. 4 times by default.
+  - Specifies how many times pg_keeper try polling to master server in order to promote standby server. 4 times by default.
 
 - pg_keeper.after_command
 
@@ -79,7 +79,7 @@ $ su
 # make USE_PGXS=1 install
 ```
 
-### Configration
+### Configuration
 For example, we set up two servers; pgserver1 and pgserver2. pgserver1 is the first master server and pgserver2 is the first standby server. After created user for replication and set up authentication, we need to install pg_keeper in both servers and configure some parameters as follows.
 
 ```console
@@ -134,10 +134,10 @@ $ ps x | grep pg_keeper | grep -v grep
 33613 ?        Ss     0:00 postgres: bgworker: pg_keeper   (standby mode:connected)
 ```
 
-For more detail of state trandition of pg_keeper, please refer [State Transition of pg_keeper](#state_transition) section.
+For more detail of state transition of pg_keeper, please refer [State Transition of pg_keeper](#state_transition) section.
 
-### Handling standby server failure (Autmatically changing sync replication to async replication)
-In case the synchronous standby server craches, because the master server cannnot replicate data to synchronous standby server the following transaction can not be processed. In this case, pg_keeper on the master server changes synchronous replication to asynchronous replication by changing `synchronous_standby_names` GUC parameter after detected the standby server failure if synchronous replciation is enabled.  You can see following server log on the master server.
+### Handling standby server failure (Automated changing sync replication to async replication)
+In case the synchronous standby server crashes, because the master server cannnot replicate data to synchronous standby server the following transaction can not be processed. In this case, pg_keeper on the master server changes synchronous replication to asynchronous replication by changing `synchronous_standby_names` GUC parameter after detected the standby server failure if synchronous replication is enabled.  You can see following server log on the master server.
 
 ```console
 $ cat master.log
@@ -152,8 +152,8 @@ $ cat master.log
 
 After the standby server recovered, you need to set `synchronous_standby_names` parameter on the primary server manually in order to set up streaming replication again.
 
-### Handling master server failure (Automatically failover)
-In case the master server craches, the standby server needs to promote to new master server. pg_keeper on the standby server promote it after detecting the master server failure. You can see following server log on the standby server.
+### Handling master server failure (Automated failover)
+In case the master server crashes, the standby server needs to promote to new master server. pg_keeper on the standby server promote it after detecting the master server failure. You can see following server log on the standby server.
 
 ```console
 $ tail standby.log
@@ -176,7 +176,7 @@ $ tail standby.log
 |**(standby:ready)**|Waiting for being able to connect to the master server.|
 |**(standby:connected)**|Connected to the master server. Heartbeating.|
 |**(master:ready)**|Wait for replication connection from standby server.|
-|**(master:connected)**|Connected from the standby server. Hearbeating.|
+|**(master:connected)**|Connected from the standby server. Heartbeating.|
 |**(master:async)**|The master server is running as async replication mode.|
 
 ## Uninstallation
