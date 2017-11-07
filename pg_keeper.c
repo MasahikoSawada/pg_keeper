@@ -145,7 +145,12 @@ _PG_init(void)
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_restart_time = BGW_NEVER_RESTART;
+#if PG_VERSION_NUM >= 100000
+	strcpy(worker.bgw_library_name, "pg_keeper");
+	strcpy(worker.bgw_function_name, "KeeperMain");
+#else
 	worker.bgw_main = KeeperMain;
+#endif
 	worker.bgw_notify_pid = 0;
 
 	/*

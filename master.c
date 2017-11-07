@@ -32,6 +32,7 @@
 #include "utils/snapmgr.h"
 #include "utils/ps_status.h"
 
+#include "pgstat.h"
 
 #define SQL_CHANGE_TO_ASYNC			"ALTER SYSTEM SET synchronous_standby_names TO '';"
 
@@ -92,9 +93,16 @@ KeeperMainMaster(void)
 		 * necessary, but is awakened if postmaster dies.  That way the
 		 * background process goes away immediately in an emergency.
 		 */
+#if PG_VERSION_NUM >= 100000
+		rc = WaitLatch(&MyProc->procLatch,
+					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+					   pgkeeper_keepalives_time * 1000L,
+					   PG_WAIT_EXTENSION);
+#else
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
 					   pgkeeper_keepalives_time * 1000L);
+#endif
 		ResetLatch(&MyProc->procLatch);
 
 		/* Emergency bailout if postmaster has died */
@@ -249,7 +257,7 @@ checkStandbyIsConnected()
 	/* We expect to detect only one standby server */
 	if (SPI_processed > 1)
 		ereport(WARNING,
-				(errmsg("pg_keeper only support one standby server, but detected %d standbys",
+				(errmsg("pg_keeper only support one standby server, but detected %lu standbys",
 					SPI_processed)));
 
 	found = SPI_processed == 1;
