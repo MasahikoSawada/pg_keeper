@@ -243,7 +243,11 @@ KeeperMain(Datum main_arg)
 	BackgroundWorkerUnblockSignals();
 
 	/* Connect to our database */
+#if PG_VERSION_NUM >= 110000
+	BackgroundWorkerInitializeConnection("postgres", NULL, 0);
+#else
 	BackgroundWorkerInitializeConnection("postgres", NULL);
+#endif
 
 exec:
 
