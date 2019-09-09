@@ -152,7 +152,7 @@ doPromote(void)
 	FILE *fp;
 
 	/* Create promote file newly */
-    snprintf(trigger_filepath, 1000, "%s/promote", DataDir);
+	snprintf(trigger_filepath, 1000, "%s/promote", DataDir);
 	if ((fp = fopen(trigger_filepath, "w")) == NULL)
 		ereport(ERROR,
 				(errmsg("could not create promote file: \"%s\"", trigger_filepath)));

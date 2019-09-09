@@ -164,7 +164,7 @@ _PG_init(void)
 void _PG_fini(void)
 {
 	/* Uninstall hook */
-    shmem_startup_hook = prev_shmem_startup_hook;
+	shmem_startup_hook = prev_shmem_startup_hook;
 }
 
 static void
@@ -328,13 +328,13 @@ execSQL(const char *conninfo, const char *sql)
 				(errmsg("could not get tuple from server : \"%s\"",
 					conninfo)));
 		
-                PQclear(res); /* add */
+		PQclear(res);
 		
 		PQfinish(con);
 		return false;
 	}
 
-	PQclear(res); /* add */	
+	PQclear(res);
 
 	/* Primary server is alive now */
 	PQfinish(con);
