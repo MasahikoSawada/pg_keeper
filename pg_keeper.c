@@ -331,10 +331,14 @@ execSQL(const char *conninfo, const char *sql)
 		ereport(LOG,
 				(errmsg("could not get tuple from server : \"%s\"",
 					conninfo)));
-
+		
+                PQclear(res); /* add */
+		
 		PQfinish(con);
 		return false;
 	}
+
+	PQclear(res); /* add */	
 
 	/* Primary server is alive now */
 	PQfinish(con);
