@@ -58,6 +58,7 @@ sig_atomic_t got_sighup;
 sig_atomic_t got_sigterm;
 
 extern void updateStatus(KeeperStatus status);
+extern void doAfterCommand(const char *command);
 
 /* master.c */
 extern bool KeeperMainMaster(void);
@@ -72,4 +73,5 @@ extern int	pgkeeper_keepalives_time;
 extern int	pgkeeper_keepalives_count;
 extern char *pgkeeper_partner_conninfo;
 extern char *pgkeeper_my_conninfo;
-extern char *pgkeeper_after_command;
+extern char *pgkeeper_standby_after_command;
+extern char *pgkeeper_master_after_command;

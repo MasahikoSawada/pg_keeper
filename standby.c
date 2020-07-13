@@ -34,10 +34,6 @@ bool	KeeperMainStandby(void);
 void	setupKeeperStandby(void);
 
 static void doPromote(void);
-static void doAfterCommand(void);
-
-/* GUC variables */
-char	*pgkeeper_after_command;
 
 /* Variables for heartbeat */
 static int retry_count;
@@ -130,8 +126,8 @@ KeeperMainStandby(void)
 			doPromote();
 
 			/* If after command is given, execute it */
-			if (pgkeeper_after_command)
-				doAfterCommand();
+			if (pgkeeper_standby_after_command)
+				doAfterCommand(pgkeeper_standby_after_command);
 
 			return true;
 		}
@@ -169,28 +165,3 @@ doPromote(void)
 	ereport(LOG,
 			(errmsg("pg_keeper promoted standby server to primary server")));
 }
-
-/*
- * Attempt to execute an external shell command after promotion.
- */
-static void
-doAfterCommand(void)
-{
-	int	rc;
-
-	Assert(pgkeeper_after_command);
-
-	ereport(LOG,
-			(errmsg("executing after promoting command \"%s\"",
-					pgkeeper_after_command)));
-
-	rc = system(pgkeeper_after_command);
-
-	if (rc != 0)
-	{
-		ereport(LOG,
-				(errmsg("failed to execute after promoting command \"%s\"",
-						pgkeeper_after_command)));
-	}
-}
-
