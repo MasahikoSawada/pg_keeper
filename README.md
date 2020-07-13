@@ -1,4 +1,4 @@
-pg_keeper 1.0
+pg_keeper 1.1
 ===========
 
 pg_keeper is a simplified clustering module for PostgreSQL, to promote a standby server to master in a 2 servers cluster.
@@ -51,9 +51,14 @@ Note that the parameters with (*) are mandatory options.
 
   - Specifies how many times pg_keeper try polling to master server in order to promote standby server. 4 times by default.
 
-- pg_keeper.after_command
+- pg_keeper.master_after_command
+
+  - Specifies shell command that will be called after connection to standby is lost.
+  
+- pg_keeper.standby_after_command
 
   - Specifies shell command that will be called after promoted. Setting stonith command to this parameter is useful for preventing the split-brain syndrome.
+
 
 ## Tested platforms
 pg_keeper has been built and tested on following platforms:

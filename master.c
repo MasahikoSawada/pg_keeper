@@ -199,6 +199,9 @@ KeeperMainMaster(void)
 				 */
 				updateStatus(KEEPER_MASTER_ASYNC);
 				standby_connected = false;
+                /* If after command is given, execute it */
+				if (pgkeeper_master_after_command)
+					doAfterCommand(pgkeeper_master_after_command);
 			}
 		}
 		/* nothing to do if in async mode */

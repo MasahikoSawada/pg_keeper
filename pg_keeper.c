@@ -56,6 +56,8 @@ int	pgkeeper_keepalives_time;
 int	pgkeeper_keepalives_count;
 char *pgkeeper_partner_conninfo;
 char *pgkeeper_my_conninfo;
+char *pgkeeper_master_after_command;
+char *pgkeeper_standby_after_command;
 
 KeeperShmem	*keeperShmem;
 
@@ -122,10 +124,21 @@ _PG_init(void)
 							   NULL,
 							   NULL);
 
-	DefineCustomStringVariable("pg_keeper.after_command",
-							   "Shell command that will be called after promoted",
+	DefineCustomStringVariable("pg_keeper.master_after_command",
+							   "Shell command that will be called after master loses standby connection",
 							   NULL,
-							   &pgkeeper_after_command,
+							   &pgkeeper_master_after_command,
+							   NULL,
+							   PGC_SIGHUP,
+							   GUC_NOT_IN_SAMPLE,
+							   NULL,
+							   NULL,
+							   NULL);
+    
+	DefineCustomStringVariable("pg_keeper.standby_after_command",
+							   "Shell command that will be called after standby is promoted",
+							   NULL,
+							   &pgkeeper_standby_after_command,
 							   NULL,
 							   PGC_SIGHUP,
 							   GUC_NOT_IN_SAMPLE,
@@ -395,4 +408,28 @@ updateStatus(KeeperStatus status)
 
 	/* Then, update process title */
 	set_ps_display(getStatusPsString(status), false);
+}
+
+/*
+ * Attempt to execute an external shell command after promotion.
+ */
+void
+doAfterCommand(const char *command)
+{
+	int	rc;
+
+	Assert(command);
+
+	ereport(LOG,
+			(errmsg("executing after command \"%s\"",
+					command)));
+
+	rc = system(command);
+
+	if (rc != 0)
+	{
+		ereport(LOG,
+				(errmsg("failed to execute after command \"%s\"",
+						command)));
+	}
 }
